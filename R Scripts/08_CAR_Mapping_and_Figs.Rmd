@@ -1,0 +1,384 @@
+---
+title: "08: Certomics CAR+ T Cell Mapping and Figs"
+output:
+  github_document:
+    html_preview: false
+---
+
+## R Libraries
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(Seurat)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+library(svglite)
+library(systemfonts)
+library(scales) 
+```
+
+---
+
+```{r certomics_mapping, message=FALSE, warning=FALSE}
+certomics_data <- readRDS("RDS/certomics_seurat_object.rds")
+tcell_subset   <- readRDS("RDS/tcell_subset.RDS")
+
+cols_to_transfer <- c(
+  "CAR_BY_EXPRS", "T_CAR", "scGate_multi",
+  "is.pure_CD4T", "is.pure_CD8T",
+  "Tcell_UCell", "CD4Tcell_UCell", "CD8T_UCell",
+  "Talphabeta_UCell", "Tgammadelta_UCell",
+  "Tgd1_UCell", "Tgd2_UCell", "Treg_UCell",
+  "scDblFinder_class", "scDblFinder_score",
+  "KEEP_CELL"
+)
+certomics_meta <- certomics_data@meta.data[, cols_to_transfer]
+
+# barcode matching
+car_barcodes <- rownames(certomics_meta)[certomics_meta$CAR_BY_EXPRS == TRUE]
+
+cat("Total CAR+ in Certomics: ", length(car_barcodes), "\n")
+cat("Found in T cell subset: ", sum(car_barcodes %in% colnames(tcell_subset)), "\n")
+
+shared_tcell <- intersect(rownames(certomics_meta), colnames(tcell_subset))
+
+tcell_subset  <- AddMetaData(tcell_subset,  metadata = certomics_meta[shared_tcell, , drop = FALSE])
+
+tcell_subset$CAR_BY_EXPRS <- as.character(tcell_subset$CAR_BY_EXPRS)
+
+cat("Total CAR+ in CERTOMICS: ", length(car_barcodes), "\n")
+cat("CAR+ in T cell subset: ", sum(car_barcodes %in% colnames(tcell_subset)), "\n")
+
+saveRDS(tcell_subset, "RDS/tcell_subset_CAR_mapped.RDS")
+```
+
+---
+## CAR+ Cells in T Cell Subset
+
+```{r car_umap, message=FALSE, warning=FALSE}
+tcell_subset <- readRDS("RDS/tcell_subset_CAR_mapped.RDS")
+
+tcell_subset$CAR_highlight <- ifelse(
+  !is.na(tcell_subset$CAR_BY_EXPRS) & tcell_subset$CAR_BY_EXPRS == "TRUE",
+  "CAR+", "Other"
+)
+
+p_car_umap <- DimPlot(
+  tcell_subset,
+  group.by = "CAR_highlight",
+  cols     = c("Other" = "grey80", "CAR+" = "#7846B4"),
+  order    = "CAR+"
+) + ggtitle("CAR+ Cells in T Cell Subset") + NoLegend()
+
+print(p_car_umap)
+```
+
+```{r save_car_umap, message=FALSE, warning=FALSE}
+svglite("figs/tcell_subset_CAR+_umap.svg", width = 8, height = 4)
+print(p_car_umap)
+dev.off()
+```
+
+---
+
+## CD4/CD8 Classification of CAR+ Cells
+
+```{r cd4_cd8_labels, message=FALSE, warning=FALSE}
+tcell_subset <- readRDS("RDS/tcell_subset_CAR_mapped.RDS")
+
+# CD4/CD8 classification from Certomics scGate output
+tcell_subset@meta.data <- tcell_subset@meta.data %>%
+  mutate(CD4_CD8_label = case_when(
+    is.pure_CD8T == "Pure" & is.pure_CD4T != "Pure" ~ "CD8",
+    is.pure_CD4T == "Pure" & is.pure_CD8T != "Pure" ~ "CD4",
+    is.pure_CD8T == "Pure" & is.pure_CD4T == "Pure" ~ "Multi",
+    TRUE ~ "Unassigned"
+  ))
+
+# Exclude follow-up sample from analysis
+Idents(tcell_subset) <- "sample_names"
+tcell_subset <- subset(tcell_subset, idents = "EC2_FU", invert = TRUE)
+Idents(tcell_subset) <- "CAR_BY_EXPRS"
+car_meta <- subset(tcell_subset, idents = "TRUE")
+
+cat("Total CAR+ cells:", nrow(car_meta@meta.data), "\n")
+cat("\nCD4/CD8 label distribution:\n")
+print(table(car_meta@meta.data$CD4_CD8_label))
+```
+
+```{r car_distribution_table, message=FALSE, warning=FALSE}
+total_tcells_per_cluster <- tcell_subset@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(total_Tcells_in_cluster = n(), .groups = "drop")
+
+total_tcells_per_sample <- tcell_subset@meta.data %>%
+  group_by(sample_names) %>%
+  summarise(total_Tcells_in_sample = n(), .groups = "drop")
+
+car_by_cluster <- car_meta@meta.data %>%
+  group_by(seurat_clusters, CD4_CD8_label) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = CD4_CD8_label, values_from = n, values_fill = 0) %>%
+  mutate(
+    CD4        = if ("CD4"        %in% names(.)) CD4        else 0L,
+    CD8        = if ("CD8"        %in% names(.)) CD8        else 0L,
+    Multi      = if ("Multi"      %in% names(.)) Multi      else 0L,
+    Unassigned = if ("Unassigned" %in% names(.)) Unassigned else 0L,
+    Total_CAR_plus = CD4 + CD8 + Multi + Unassigned
+  ) %>%
+  left_join(total_tcells_per_cluster, by = "seurat_clusters") %>%
+  arrange(as.numeric(as.character(seurat_clusters))) %>%
+  mutate(
+    pct_CD4_of_CAR        = CD4        / Total_CAR_plus * 100,
+    pct_CD8_of_CAR        = CD8        / Total_CAR_plus * 100,
+    pct_Multi_of_CAR      = Multi      / Total_CAR_plus * 100,
+    pct_Unassigned_of_CAR = Unassigned / Total_CAR_plus * 100,
+    pct_CD4_of_Tcells     = CD4        / total_Tcells_in_cluster * 100,
+    pct_CD8_of_Tcells     = CD8        / total_Tcells_in_cluster * 100
+  )
+
+print(car_by_cluster)
+```
+
+---
+
+## Gene Expression Heatmaps: CAR+ vs CAR- T Cells
+
+```{r heatmap_setup, message=FALSE, warning=FALSE}
+tcell_subset <- readRDS("RDS/tcell_subset_CAR_mapped.RDS")
+Idents(tcell_subset) <- "sample_names"
+tcell_subset <- subset(tcell_subset, idents = "EC2_FU", invert = TRUE)
+tcell_subset <- JoinLayers(tcell_subset)
+
+gene_lists <- list(
+  Cytotoxicity = c("GZMB", "GZMH", "GZMK", "GZMM", "PRF1", "NKG7", "CCL4",
+                   "CCL5", "KLRK1", "KLRC4", "KLRG1", "CLEC2B", "CST7", "RUNX3", "PRDM1"),
+  IFN_Inflam   = c("IFNG", "MX2", "DDX58", "IFITM1", "IFITM2", "ZC3HAV1",
+                   "ISG20", "IFNGR1", "IRF3", "STAT4", "STAT5A", "STAT5B",
+                   "SOCS3", "TNFAIP3", "NFKBIB", "CYLD"),
+  Homing       = c("CXCR4", "SELL", "ITGA4", "SELPLG", "CD44", "VCAM1",
+                   "S1PR4", "P2RY10", "ITGAE", "CD69", "ITGB7"),
+  Cytokine     = c("IFNG", "IL2", "LTA", "XCL1", "XCL2", "IL10", "CXCL13",
+                   "IL4", "IL5", "IL13", "IL17A", "IL17F", "IL22", "IL21", 
+                   "CSF2", "CCL3", "CCL4", "TNFSF13B", "CCL20")
+)
+
+
+
+get_avg_matrix <- function(obj, genes) {
+  genes <- intersect(genes, rownames(obj))
+  expr  <- GetAssayData(obj, layer = "data")[genes, , drop = FALSE]
+  meta  <- obj@meta.data
+
+  groups <- list(
+    "NV"        = which(meta$condition == "NV"),
+    "CTRL_CAR-" = which(meta$condition == "CAR-T Control"       & meta$CAR_BY_EXPRS == "FALSE"),
+    "CTRL_CAR+" = which(meta$condition == "CAR-T Control"       & meta$CAR_BY_EXPRS == "TRUE"),
+    "EC_CAR-"   = which(meta$condition == "CAR-T Enterocolitis" & meta$CAR_BY_EXPRS == "FALSE"),
+    "EC_CAR+"   = which(meta$condition == "CAR-T Enterocolitis" & meta$CAR_BY_EXPRS == "TRUE")
+  )
+
+  mat <- sapply(groups, function(idx) {
+    if (length(idx) == 0) return(rep(NA, nrow(expr)))
+    rowMeans(expr[, idx, drop = FALSE])
+  })
+
+  t(scale(t(mat)))  # z-score per gene
+}
+
+col_ha <- HeatmapAnnotation(
+  Condition = c("NV", "CAR-T Control", "CAR-T Control",
+                "CAR-T Enterocolitis", "CAR-T Enterocolitis"),
+  CAR       = c("none", "CAR-", "CAR+", "CAR-", "CAR+"),
+  col = list(
+    Condition = c("NV" = "#D0CECE", "CAR-T Control" = "#F5C342",
+                  "CAR-T Enterocolitis" = "#D4494E"),
+    CAR       = c("none" = "#D0CECE", "CAR-" = "#82B446", "CAR+" = "#7846B4")
+  ),
+  show_annotation_name = TRUE,
+  annotation_name_side = "left"
+)
+
+make_heatmap <- function(mat, title, show_legend = TRUE) {
+  global_max <- max(abs(mat), na.rm = TRUE)
+  col_fun    <- colorRamp2(c(-global_max, 0, global_max),
+                           c("#005B7F", "white", "#D4494E"))
+  Heatmap(
+    mat,
+    name                 = "z-score",
+    col                  = col_fun,
+    top_annotation       = col_ha,
+    cluster_rows         = FALSE,
+    cluster_columns      = FALSE,
+    show_column_names    = TRUE,
+    column_labels        = c("NV", "CTRL_CAR-", "CTRL_CAR+", "EC_CAR-", "EC_CAR+"),
+    show_row_names       = TRUE,
+    row_names_side       = "left",
+    column_names_rot     = 45,
+    column_title         = title,
+    column_title_gp      = gpar(fontsize = 11, fontface = "bold"),
+    row_names_gp         = gpar(fontsize = 9),
+    width                = unit(4, "cm"),
+    show_heatmap_legend  = show_legend
+  )
+}
+```
+
+```{r heatmaps, message=FALSE, warning=FALSE}
+for (name in names(gene_lists)) {
+  mat <- get_avg_matrix(tcell_subset, gene_lists[[name]])
+  print(make_heatmap(mat, name))
+}
+```
+
+---
+
+## Pie Chart: CAR+ Cells per Cluster
+
+```{r car_pie, message=FALSE, warning=FALSE}
+n_clusters     <- length(unique(tcell_subset$seurat_clusters))
+cluster_colors <- setNames(
+  scales::hue_pal()(n_clusters),
+  as.character(sort(unique(as.numeric(as.character(tcell_subset$seurat_clusters)))))
+)
+
+cluster_summary <- tcell_subset@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(
+    total   = n(),
+    car_pos = sum(CAR_BY_EXPRS == "TRUE", na.rm = TRUE),
+    pct_pos = car_pos / total * 100,
+    .groups = "drop"
+  )
+
+p_pie <- ggplot(cluster_summary, aes(x = "", y = car_pos, fill = factor(seurat_clusters))) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  geom_text(aes(label = car_pos),
+            position = position_stack(vjust = 0.5),
+            size = 3, fontface = "bold", color = "white") +
+  scale_fill_manual(values = cluster_colors) +
+  labs(title = "CAR+ cells per T cell cluster", x = NULL, y = NULL, fill = "Cluster") +
+  theme_void() +
+  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
+
+print(p_pie)
+```
+
+---
+
+##  CAR+ Cells per Sample, Coloured by T Cell Cluster
+
+```{r car_per_sample_stacked, message=FALSE, warning=FALSE}
+sample_df <- tcell_subset@meta.data %>%
+  filter(CAR_BY_EXPRS == "TRUE") %>%
+  group_by(sample_names, seurat_clusters) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(sample_names) %>%
+  mutate(show_label = ifelse(n <= 2, NA, n))
+
+CTRL3_row <- data.frame(
+  sample_names    = "CTRL3",
+  seurat_clusters = factor(0),
+  n               = 0,
+  show_label      = NA
+)
+
+sample_df <- bind_rows(sample_df, CTRL3_row) %>%
+  mutate(sample_names = factor(sample_names, levels = c(
+    "EC1", "EC2", "EC3", "EC4",
+    "CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7"
+  )))
+
+p_sample <- ggplot(sample_df, aes(x = sample_names, y = n, fill = factor(seurat_clusters))) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = show_label),
+            position = position_stack(vjust = 0.5),
+            size = 3, fontface = "bold", color = "white") +
+  annotate("text", x = "CTRL3", y = 1, label = "0",
+           size = 3, fontface = "bold", color = "black") +
+  scale_fill_manual(values = cluster_colors) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "CAR+ cells per sample by T cell cluster",
+       x = "Sample", y = "Number of CAR+ cells", fill = "Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+print(p_sample)
+```
+
+```{r save_plots, message=FALSE, warning=FALSE}
+ggsave("figs/tcell_obj_CAR+_patient_wise_barplot.svg",
+       plot = p_sample, 
+       device = svglite, 
+       width = 1200, 
+       height = 2400, 
+       units = "px"
+       )
+```
+
+---
+
+## CAR+ T Cell Subtype (CD4/CD8) per Sample
+
+```{r car_cd4_cd8, message=FALSE, warning=FALSE}
+cd_df <- tcell_subset@meta.data %>%
+  filter(CAR_BY_EXPRS == "TRUE") %>%
+  mutate(T_cell_type = case_when(
+    is.pure_CD8T == "Pure" & is.pure_CD4T != "Pure" ~ "CD8",
+    is.pure_CD4T == "Pure" & is.pure_CD8T != "Pure" ~ "CD4",
+    is.pure_CD8T == "Pure" & is.pure_CD4T == "Pure" ~ "Multi",
+    TRUE ~ "Unassigned"
+  )) %>%
+  group_by(sample_names, T_cell_type) %>%
+  summarise(car_count = n(), .groups = "drop") %>%
+  tidyr::complete(sample_names, T_cell_type, fill = list(car_count = 0)) %>%
+  mutate(
+    T_cell_type  = factor(T_cell_type, levels = c("CD8", "CD4", "Multi", "Unassigned"))
+  )
+
+# Add CTRL 3 with 0 cells
+CTRL3_cd <- tidyr::expand_grid(
+  T_cell_type = factor(c("CD8", "CD4", "Multi", "Unassigned"),
+                       levels = c("CD8", "CD4", "Multi", "Unassigned"))
+) %>%
+  mutate(sample_names = "CTRL3", car_count = 0)
+
+cd_df <- bind_rows(cd_df, CTRL3_cd) %>%
+  mutate(sample_names = factor(sample_names, levels = c(
+    "EC1", "EC2", "EC3", "EC4",
+    "CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7"
+  )))
+
+p_cd <- ggplot(cd_df, aes(x = sample_names, y = car_count, fill = T_cell_type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6) +
+  geom_text(aes(label = car_count, y = car_count),
+            position = position_dodge(width = 0.7),
+            vjust = -0.4, size = 2.8, fontface = "bold", color = "black") +
+  scale_fill_manual(values = c(
+    "CD8"        = "#005B7F",
+    "CD4"        = "#6FC1CD",
+    "Multi"      = "grey50",
+    "Unassigned" = "#B3B3B3"
+  )) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "CAR+ T cells — CD4 vs CD8 per sample",
+       x = "Sample", y = "Number of CAR+ T cells", fill = "T cell type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+print(p_cd)
+```
+
+```{r save_pcd, message=FALSE, warning=FALSE}
+ggsave('figs/tcell_obj_CAR+_CD4CD8_per_sample.svg', 
+       plot = p_cd, 
+       device = svglite, 
+       width = 1200, 
+       height = 800,
+       units = 'px'
+       )
+```
+

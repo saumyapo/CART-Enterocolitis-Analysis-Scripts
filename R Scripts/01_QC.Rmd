@@ -1,0 +1,505 @@
+---
+title: "01: Quality Control"
+output:
+  github_document:
+    html_preview: false
+---
+
+## R Libraries
+
+The following R libraries were used to process the data and produce this report.
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(stringr)
+library(ggplot2)
+library(SummarizedExperiment)
+library(openxlsx)
+library(scDblFinder)
+library(SoupX)
+library(data.table)
+library(scds)
+library(magrittr)
+```
+
+---
+
+```{r params, results=FALSE, message=FALSE, warning=FALSE}
+sampleNames <- c(
+  "EC1", "EC2", "EC2_FU", "EC3", "EC4",
+  "NV1", "NV2", "NV3", "NV4", "NV5", "NV6",
+  "NV7", "NV8", "NV9", "NV10", "NV11", "CTRL2",
+  "CTRL3", "CTRL4", "CTRL5", "CTRL7"
+)
+
+data_dir    <- "../MEX"
+projectName <- "CAR-T LC"
+
+# QC thresholds
+nFeature_min  <- 200
+nFeature_max  <- 8000
+percent_mt_max <- 20
+nCount_min     <- 1000      # exceptions below
+nCount_max     <- 100000
+nCount_CTRL3   <- 3500      # higher minimum for CTRL3, based on per sample distribution. See line 292
+nCount_NV5   <- 1650      # higher minimum for NV5, based on per sample distribution. See line 292
+```
+
+---
+
+## Ambient RNA correction (SoupX)
+
+```{r soupx_loop, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+# Check if all files are getting picked from directory of interest
+all_dirs <- list.dirs(path = data_dir, full.names = TRUE, recursive = FALSE)
+message("Detected directories: ", paste(all_dirs, collapse = ", "))
+
+seurat_list <- list()
+
+pdf("pdfs/raw_SoupX_diagnostic_plots.pdf", width = 8, height = 6)
+
+for (sample in sampleNames) {
+
+  filtered_file <- file.path(data_dir, sample)
+  raw_file      <- file.path(data_dir, paste0(sample, "_raw"))
+
+  message("Processing sample: ", sample)
+  message("raw: ", raw_file)
+  message("filtered: ", filtered_file)
+
+  tod <- Read10X(raw_file)
+  toc <- Read10X(filtered_file)
+
+  # Build SoupChannel and estimate soup profile
+  sc <- SoupChannel(tod, toc, calcSoupProfile = FALSE)
+  sc <- estimateSoup(sc)
+
+  # clustering for SoupX 
+  tmp <- CreateSeuratObject(counts = toc, min.cells = 0, min.features = 0)
+  tmp <- NormalizeData(tmp)
+  tmp <- FindVariableFeatures(tmp, nfeatures = 2000)
+  tmp <- ScaleData(tmp)
+  tmp <- RunPCA(tmp, npcs = 30)
+  tmp <- RunUMAP(tmp, dims = 1:30)
+  tmp <- FindNeighbors(tmp, dims = 1:30)
+  tmp <- FindClusters(tmp)
+
+  sc <- setClusters(sc, setNames(tmp$seurat_clusters, rownames(tmp@meta.data)))
+  sc <- setDR(sc, tmp@reductions$umap@cell.embeddings)
+
+  plot.new()
+  title(main = paste("SoupX diagnostic —", sample), cex.main = 1.2)
+  sc <- autoEstCont(sc)
+
+  # Corrected
+  corrected <- adjustCounts(sc, roundToInt = TRUE)
+
+  # Build final Seurat object from corrected counts
+  seurat_obj <- CreateSeuratObject(
+    counts    = corrected,
+    project   = projectName,
+    min.cells = 3,
+    min.features = 200
+  )
+  seurat_obj$orig.ident <- sample
+
+  toc_matched <- toc[, colnames(corrected)]
+  seurat_obj[["RNA"]]$original_counts <- toc_matched
+
+  seurat_list[[sample]] <- seurat_obj
+}
+
+dev.off()
+
+# Merge all samples into a single Seurat object
+combined_data <- merge(seurat_list[[1]], y = seurat_list[-1], add.cell.ids = sampleNames)
+combined_data$sample_names <- combined_data$orig.ident
+```
+
+```{r condition_labels, message=FALSE, warning=FALSE}
+# CAR-T Enterocolitis: Patients who received CAR-T and developed colitis
+# CAR-T Control: Patients who received CAR-T but no colitis
+# NV: Healthy controls
+# EC2: Follow-up sample
+
+sample_to_condition <- setNames(
+  ifelse(sampleNames == "EC2_FU", "EC2_FU",
+    ifelse(sampleNames %in% c("CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7"),
+           "CAR-T Control",
+      ifelse(grepl("^EC", sampleNames), "CAR-T Enterocolitis",
+        ifelse(grepl("^NV",   sampleNames), "NV", NA)
+      )
+    )
+  ),
+  sampleNames
+)
+
+combined_data$condition <- plyr::mapvalues(
+  combined_data$sample_names,
+  from = names(sample_to_condition),
+  to   = sample_to_condition
+)
+unique(combined_data$condition)
+```
+
+```{r category,  message=FALSE, warning=FALSE}
+sample_to_category <- setNames(
+  case_when(
+    
+    # Club all normal NV samples together
+    grepl("^NV", sampleNames) ~ "NV",
+
+    # Keep follow up sample separate
+    grepl("EC2_FU", sampleNames) ~ 
+      str_extract(sampleNames, "EC2_FU"),
+
+    # Keep EC samples separate 
+    grepl("^EC\\d+", sampleNames) ~ 
+      str_extract(sampleNames, "^EC\\d+"),
+
+    # Keep CAR-T controls separate
+    grepl("^CTRL\\d+", sampleNames) ~ 
+      str_extract(sampleNames, "^CTRL\\d+"),
+
+    TRUE ~ NA_character_
+  ),
+  sampleNames
+)
+
+# Apply category to Seurat object
+combined_data$category <- plyr::mapvalues(
+  combined_data$sample_names,
+  from = names(sample_to_category),
+  to = sample_to_category
+)
+
+unique(combined_data$category)
+```
+
+
+```{r chemistry_annotation, message=FALSE, warning=FALSE}
+Idents(combined_data) <- "sample_names"
+
+cluster_annotations <- c(
+  "EC1"   = "3prime",  "EC2" = "3prime",
+  "EC2_FU" = "3prime",  "EC3" = "5prime",
+  "EC4"   = "5prime",  "NV1"  = "3prime",
+  "NV2" = "3prime",  "NV3" = "3prime",
+  "NV4" = "3prime",  "NV5" = "3prime",
+  "NV6" = "3prime",  "NV7" = "3prime",
+  "NV8" = "3prime",  "NV9" = "3prime",
+  "NV10" = "3prime",  "NV11" = "3prime",
+  "CTRL2" = "3prime",  "CTRL3" = "3prime",
+  "CTRL4" = "5prime",  "CTRL5" = "5prime",
+  "CTRL7"  = "5prime"
+)
+
+combined_data$chemistry <- plyr::mapvalues(
+  combined_data$sample_names,
+  from = names(cluster_annotations),
+  to   = cluster_annotations
+)
+unique(combined_data$chemistry)
+
+saveRDS(combined_data, "RDS/data_combined_raw.RDS")
+```
+
+
+---
+
+## Doublet detection and removal (scDblFinder and scds)
+
+```{r scdblfinder, message=FALSE, warning=FALSE}
+set.seed(100)
+
+DefaultAssay(combined_data) <- "RNA"
+
+sce <- combined_data %>% JoinLayers() %>% as.SingleCellExperiment()
+sce <- scDblFinder(sce, samples = "sample_names")
+
+table(sce$scDblFinder.class)
+```
+
+```{r scdblfinder_transfer, message=FALSE, warning=FALSE}
+# Transfer scDblFinder scores back to Seurat metadata
+meta_scdblfinder <- sce@colData@listData %>%
+  as.data.frame() %>%
+  dplyr::select(starts_with("scDblFinder"))
+
+rownames(meta_scdblfinder) <- sce@colData@rownames
+
+combined_data <- AddMetaData(
+  object   = combined_data,
+  metadata = meta_scdblfinder %>% dplyr::select("scDblFinder.class")
+)
+
+# QC tracking table
+qc_table <- data.frame(
+  sample    = unique(combined_data$sample_names),
+  cells_raw = as.numeric(table(combined_data$sample_names)[unique(combined_data$sample_names)]),
+  stringsAsFactors = FALSE
+)
+
+add_qc_column <- function(qc_table, seurat_obj, col_name) {
+  counts <- table(seurat_obj$sample_names)
+  qc_table[[col_name]] <- counts[qc_table$sample]
+  qc_table[[col_name]][is.na(qc_table[[col_name]])] <- 0
+  qc_table
+}
+```
+
+
+```{r scds, message=FALSE, warning=FALSE}
+set.seed(1234)
+
+# Subset to scDblFinder singlets first
+data_singlet <- subset(combined_data, scDblFinder.class == "singlet")
+qc_table     <- add_qc_column(qc_table, data_singlet, "after_scDblFinder")
+
+# Run scds
+sce_scds <- data_singlet %>% JoinLayers() %>% as.SingleCellExperiment()
+sce_scds <- cxds(sce_scds)
+sce_scds <- bcds(sce_scds)
+sce_scds <- cxds_bcds_hybrid(sce_scds, estNdbl = TRUE)
+
+scds_res <- as.data.frame(colData(sce_scds)) %>%
+  dplyr::select(cxds_score, bcds_score, hybrid_score, cxds_call, bcds_call, hybrid_call)
+
+data_singlet <- AddMetaData(data_singlet, scds_res)
+
+data_singlet$doublet_consensus <- data_singlet$scDblFinder.class == "doublet" &
+                                   data_singlet$hybrid_call == TRUE
+
+table(data_singlet$doublet_consensus)
+```
+
+```{r scds_filter, message=FALSE, warning=FALSE}
+data_singlet2 <- subset(data_singlet, hybrid_call == FALSE)
+qc_table      <- add_qc_column(qc_table, data_singlet2, "after_scds")
+
+saveRDS(data_singlet2, "RDS/data_dblt_filt_combined_raw.RDS")
+```
+
+---
+
+## Selection of per-sample QC thresholds
+
+
+```{r mito, message=FALSE, warning=FALSE}
+data <- readRDS("RDS/data_dblt_filt_combined_raw.RDS")
+
+data[["percent.mt"]] <- PercentageFeatureSet(data, pattern = "^MT-")
+VlnPlot(data, features = "percent.mt")
+
+data$mt_label <- factor(ifelse(data$percent.mt > 20, "Above 20%", "Below 20%"))
+
+VlnPlot(data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+---
+
+# Normalization, Scaling, Finding HVGs, PCA and UMAP 
+
+```{r ig_exclusion_hvg, message=FALSE, warning=FALSE}
+data_copy <- data
+
+# Identify and remove IG genes from HVG candidates
+ig_genes  <- grep("^IG[HKL][VDJC]", rownames(data_copy), value = TRUE)
+genes_keep <- setdiff(rownames(data_copy), ig_genes)
+
+data_no_ig <- subset(data_copy, features = genes_keep)
+data_no_ig <- NormalizeData(data_no_ig)
+data_no_ig <- FindVariableFeatures(data_no_ig, selection.method = "vst", nfeatures = 2000)
+
+hvg_no_ig <- VariableFeatures(data_no_ig)
+VariableFeatures(data) <- hvg_no_ig
+
+data <- NormalizeData(data)
+data <- ScaleData(data, vars.to.regress = "percent.mt", verbose = TRUE)
+data <- RunPCA(data, npcs = 50, features = VariableFeatures(data))
+ElbowPlot(data, ndims = 50)
+data <- RunUMAP(data, reduction = "pca", dims = 1:30)
+
+saveRDS(data, "RDS/data_combined_raw_umap.RDS")
+```
+
+---
+
+## Density plots to determine per sample QC
+
+```{r density_plots, message=FALSE, warning=FALSE}
+# Density plots were generated at this stage to examine the per-sample nCount_RNA distributions. Based on these distributions, sample-specific minimum nCount_RNA thresholds were set for CTRL3 (nCount_CTRL3 = 3500) and NV5 (nCount_NV5 = 1650) in the params block above. All QC filtering was redone to follow these cutoffs and checked again via density pltos
+
+get_data <- function(fn) {
+  dat <- get(fn)
+  data.table(
+    nFeature  = dat$nFeature_RNA,
+    percent.mt = dat$percent.mt,
+    nCount    = dat$nCount_RNA,
+    sample    = dat$sample_names
+  )
+}
+
+get_cumperc <- function(x) {
+  ret <- data.table(percent = seq(0, 100))
+  ret[, cells := 0]
+  for (i in 1:nrow(ret)) {
+    set(ret, i, "cells", 100 * length(which(x > ret$percent[i])) / length(x))
+  }
+  ret
+}
+
+dat <- get_data("data")
+
+dat_filt <- dat[
+  (sample != "CTRL3" & sample != "NV5" & nCount > nCount_min) |
+  (sample == "CTRL3" & nCount > nCount_CTRL3) |
+  (sample == "NV5"    & nCount > nCount_NV5)
+]
+dat_filt <- dat_filt[nFeature > nFeature_min & nFeature < nFeature_max &
+                     percent.mt < percent_mt_max & nCount < nCount_max]
+
+distinct <- scales::hue_pal()(length(unique(dat$sample)))
+
+density_nofilt <- ggplot(dat, aes(x = nCount, colour = sample)) +
+  geom_freqpoly(binwidth = 1000) +
+  scale_x_continuous(breaks = seq(0, 1e6, by = 1e4)) +
+  scale_colour_manual(values = distinct) +
+  scale_y_continuous(breaks = seq(0, 3400, by = 500)) +
+  theme_minimal() +
+  ggtitle("Density Pre-filter") +
+  theme(axis.text.x = element_text(angle = 45))
+print(density_nofilt)
+
+density_filt <- ggplot(dat_filt, aes(x = nCount, colour = sample)) +
+  geom_freqpoly(binwidth = 1000) +
+  scale_x_continuous(breaks = seq(0, 1e6, by = 1e4)) +
+  scale_colour_manual(values = distinct) +
+  theme_minimal() +
+  ggtitle("Density Post-filter") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))
+print(density_filt)
+
+all_cum <- dat[, get_cumperc(percent.mt), by = "sample"]; all_cum$filter <- "no"
+fil_cum <- dat_filt[, get_cumperc(percent.mt), by = "sample"]; fil_cum$filter <- "yes"
+
+percent.mt_plt <- ggplot(rbind(all_cum, fil_cum),
+       aes(x = percent, y = cells, color = sample, lty = filter)) +
+  geom_line() +
+  xlab("> percent.mt") + ylab("Percent of cells") +
+  scale_x_continuous(breaks = seq(0, 100, by = 10)) +
+  scale_colour_manual(values = distinct) +
+  theme_minimal() +
+  ggtitle("Cumulative Mitochondrial Percentage") +
+  theme(axis.text.x = element_text(angle = 45))
+print(percent.mt_plt)
+```
+
+---
+
+## Cell Filtering
+
+```{r cell_filtering, message=FALSE, warning=FALSE}
+data <- readRDS("RDS/data_combined_raw_umap.RDS")
+
+current <- data
+
+current <- subset(current, subset = nFeature_RNA > nFeature_min)
+qc_table$nFeature_RNA_200 <- as.numeric(table(current$sample_names)[qc_table$sample])
+
+current <- subset(current, subset = nFeature_RNA < nFeature_max)
+qc_table$nFeature_RNA_8000 <- as.numeric(table(current$sample_names)[qc_table$sample])
+
+current <- subset(current, subset = percent.mt < percent_mt_max)
+qc_table$percent.mt_20 <- as.numeric(table(current$sample_names)[qc_table$sample])
+
+current <- subset(
+  current,
+  subset =
+    (sample_names != "CTRL3" & sample_names != "NV5" & nCount_RNA > nCount_min) |
+    (sample_names == "CTRL3" & nCount_RNA > nCount_CTRL3) |
+    (sample_names == "NV5"    & nCount_RNA > nCount_NV5)
+)
+qc_table$nCount_1000 <- as.numeric(table(current$sample_names)[qc_table$sample])
+
+current <- subset(current, subset = nCount_RNA < nCount_max)
+qc_table$nCount_100k <- as.numeric(table(current$sample_names)[qc_table$sample])
+
+# Apply final filter to data object
+data_filtered <- subset(
+  data,
+  subset =
+    nFeature_RNA > nFeature_min &
+    nFeature_RNA < nFeature_max &
+    percent.mt   < percent_mt_max &
+    nCount_RNA   < nCount_max &
+    (
+      (sample_names != "CTRL3" & sample_names != "NV5" & nCount_RNA > nCount_min) |
+      (sample_names == "CTRL3" & nCount_RNA > nCount_CTRL3) |
+      (sample_names == "NV5"    & nCount_RNA > nCount_NV5)
+    )
+)
+
+saveRDS(data_filtered, "RDS/data_filtered_umap.RDS")
+```
+
+---
+
+## Non-integrated UMAP Before Filtering Post Doublet Filtering {.tabset}
+
+```{r umap_before_qc, results='asis', message=FALSE, warning=FALSE}
+data <- readRDS("RDS/data_combined_raw_umap.RDS")
+
+cat("## Samples \n")
+DimPlot(data, reduction = "umap", group.by = "sample_names", raster = FALSE) +
+  ggtitle("Before Integration and QC") + theme(legend.position = "none")
+cat(" \n \n")
+
+cat("## Condition \n")
+DimPlot(data, reduction = "umap", group.by = "condition", raster = FALSE) +
+  ggtitle("Before Integration and QC")
+cat(" \n \n")
+```
+
+
+---
+
+## Non-integrated UMAP After Filtering {.tabset}
+
+```{r umap_after_filter, results='asis', message=FALSE, warning=FALSE}
+cat("## Samples \n")
+DimPlot(data_filtered, reduction = "umap", group.by = "sample_names", raster = FALSE) +
+  ggtitle("UMAP post Mitochondrial Filtering") + theme(legend.position = "none")
+cat(" \n \n")
+
+cat("## Condition \n")
+DimPlot(data_filtered, reduction = "umap", group.by = "condition", raster = FALSE) +
+  ggtitle("UMAP post Mitochondrial Filtering")
+cat(" \n \n")
+```
+
+---
+
+## QC Table
+
+```{r qc_table_save, message=FALSE, warning=FALSE}
+qc_table[nrow(qc_table) + 1, ] <- NA
+qc_table$sample[nrow(qc_table)] <- "Total"
+
+num_cols <- sapply(qc_table, is.numeric)
+qc_table[nrow(qc_table), num_cols] <- colSums(qc_table[, num_cols], na.rm = TRUE)
+
+openxlsx::write.xlsx(
+  qc_table,
+  "csvs/all_celltypes_qc_table_cell_counts.xlsx",
+  rowNames = FALSE
+)
+```
+
+```{r qc_table_display, results='asis', message=FALSE, warning=FALSE}
+print(qc_table)
+```
+

@@ -1,0 +1,129 @@
+---
+title: "04: Stromal Sub-clustering"
+output:
+  github_document:
+    html_preview: false
+---
+
+## R Libraries
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(harmony)
+library(openxlsx)
+```
+
+---
+
+```{r extract_stroma, message=FALSE, warning=FALSE}
+# This file demonstrates subclustering for the stromal compartment. The same workflow was applied to all other subsets of interest: T cells, myeloid cells, B cells, plasma cells, epithelial cells and endothelial cells
+set.seed(2024)
+
+data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+Idents(data.combined) <- "seurat_clusters"
+
+# Stromal clusters identified in global annotation
+stromal_subset <- subset(data.combined, idents = c("3", "9", "11", "12", "19"))
+```
+
+---
+
+## Subcluster
+
+```{r recluster_stroma, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+stromal_copy <- stromal_subset
+ig_genes     <- grep("^IG[HKL][VDJC]", rownames(stromal_copy), value = TRUE)
+data_no_ig   <- subset(stromal_copy, features = setdiff(rownames(stromal_copy), ig_genes))
+
+data_no_ig   <- NormalizeData(data_no_ig)
+data_no_ig   <- FindVariableFeatures(data_no_ig, nfeatures = 2000)
+hvg_no_ig    <- VariableFeatures(data_no_ig)
+VariableFeatures(stromal_subset) <- hvg_no_ig
+
+stromal_subset <- NormalizeData(stromal_subset)
+stromal_subset <- ScaleData(stromal_subset, vars.to.regress = "percent.mt", verbose = TRUE)
+stromal_subset <- RunPCA(stromal_subset, npcs = 50)
+ElbowPlot(stromal_subset, ndims = 50)
+
+stromal_subset <- RunHarmony(stromal_subset, "sample_names", dims.use = 1:10)
+ElbowPlot(stromal_subset, reduction = "harmony", ndims = 50)
+
+stromal_subset <- RunUMAP(stromal_subset,    reduction = "harmony", dims = 1:10)
+stromal_subset <- FindNeighbors(stromal_subset, reduction = "harmony", dims = 1:10)
+stromal_subset <- FindClusters(stromal_subset, resolution = 0.5)
+
+saveRDS(stromal_subset, "RDS/stromal_subset_umap_8_clusters.RDS")
+```
+
+---
+
+## Subcluster Markers
+
+```{r find_markers, message=FALSE, warning=FALSE}
+stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+DefaultAssay(stromal_subset) <- "RNA"
+Idents(stromal_subset)       <- "seurat_clusters"
+stromal_subset <- JoinLayers(stromal_subset)
+
+data.markers <- FindAllMarkers(
+  stromal_subset,
+  only.pos        = FALSE,
+  min.pct         = 0.25,
+  logfc.threshold = 0.25,
+  test.use = "wilcox"
+)
+
+wb <- createWorkbook()
+addWorksheet(wb, "all_clusters")
+writeData(wb, "all_clusters", data.markers)
+
+for (cl in unique(data.markers$cluster)) {
+  addWorksheet(wb, paste0("cluster_", cl))
+  writeData(wb, paste0("cluster_", cl), data.markers %>% filter(cluster == cl))
+}
+
+saveWorkbook(wb, "csvs/stromal_subset_all_markers_seurat_clusters.xlsx", overwrite = TRUE)
+```
+
+---
+
+```{r umap_stroma, message=FALSE, warning=FALSE}
+Idents(stromal_subset) <- "seurat_clusters"
+DimPlot(stromal_subset, reduction = "umap", label = TRUE, repel = TRUE, raster = FALSE) +
+  ggtitle("Seurat Clusters")
+```
+
+---
+
+## Stromal Subcluster Annotation
+
+```{r stroma_annotation, message=FALSE, warning=FALSE}
+Idents(stromal_subset) <- "seurat_clusters"
+
+cluster_annotations <- c(
+  "0" = "Intestinal fibroblasts",
+  "1" = "Pericryptal SOX6+ teleocytes",
+  "2" = "Myofibroblasts",
+  "3" = "Pericryptal SOX6+ teleocytes",
+  "4" = "Pericytes",
+  "5" = "Crypt niche fibroblasts",
+  "6" = "Glia associated stromal cells",
+  "7" = "Intestinal fibroblasts"
+)
+
+stromal_subset$cluster_label <- plyr::mapvalues(
+  stromal_subset$seurat_clusters,
+  from = names(cluster_annotations),
+  to   = cluster_annotations
+)
+
+Idents(stromal_subset) <- stromal_subset$cluster_label
+DimPlot(stromal_subset, reduction = "umap", label = TRUE, repel = TRUE, raster = FALSE) +
+  ggtitle("Stromal Subset Annotated")
+
+saveRDS(stromal_subset, "RDS/stromal_subset_umap_8_clusters.RDS")
+```

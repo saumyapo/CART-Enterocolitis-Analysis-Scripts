@@ -1,0 +1,194 @@
+---
+title: "03: Clustering"
+output:
+  github_document:
+    html_preview: false
+---
+
+## R Libraries
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(openxlsx)
+library(svglite)
+```
+
+---
+
+## Clustering
+
+```{r clustering, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+data.combined <- readRDS("RDS/data_Integrated_21_umap.RDS")
+Idents(data.combined) <- "sample_names"
+
+data.combined <- FindNeighbors(data.combined, reduction = "harmony", dims = 1:30)
+data.combined <- FindClusters(data.combined, resolution = 0.8)
+
+saveRDS(data.combined, "RDS/data_21_umap_26_clusters.RDS")
+```
+
+```{r load_clustered, message=FALSE, warning=FALSE}
+data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+Idents(data.combined) <- "seurat_clusters"
+
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE,
+        raster = FALSE, label.size = 5) +
+  ggtitle("Seurat Clusters")
+```
+
+---
+
+## Cluster Markers (FindAllMarkers)
+
+```{r find_markers,  message=FALSE, warning=FALSE}
+data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+DefaultAssay(data.combined) <- "RNA"
+Idents(data.combined) <- "seurat_clusters"
+data.combined <- JoinLayers(data.combined)
+
+data.markers <- FindAllMarkers(
+  data.combined,
+  only.pos        = FALSE,
+  min.pct         = 0.25,
+  logfc.threshold = 0.25,
+  test.use = "wilcox"
+)
+
+wb <- createWorkbook()
+addWorksheet(wb, "all_clusters")
+writeData(wb, "all_clusters", data.markers)
+
+for (cl in unique(data.markers$cluster)) {
+  addWorksheet(wb, paste0("cluster_", cl))
+  writeData(wb, paste0("cluster_", cl), data.markers %>% filter(cluster == cl))
+}
+
+saveWorkbook(wb, "csvs/data_21_all_markers_seurat_clusters.xlsx", overwrite = TRUE)
+```
+
+---
+
+## Cell-Type Annotations
+
+```{r cluster_annotation, message=FALSE, warning=FALSE}
+data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+Idents(data.combined) <- "seurat_clusters"
+
+cluster_annotations <- c(
+  "0"  = "T cells",          "1"  = "PC",
+  "2"  = "T cells",          "3"  = "Stroma",
+  "4"  = "PC",               "5"  = "Mast cells",
+  "6"  = "Endothelial cells","7"  = "B cells",
+  "8"  = "Myeloid",          "9"  = "Stroma",
+  "10" = "T cells",          "11" = "Stroma",
+  "12" = "Stroma",           "13" = "Glia",
+  "14" = "Myeloid",          "15" = "Endothelial cells",
+  "16" = "Epithelial cells", "17" = "Mixed",
+  "18" = "Proliferating",    "19" = "Stroma",
+  "20" = "Myeloid",          "21" = "Myeloid",
+  "22" = "Epithelial cells", "23" = "PC",
+  "24" = "Epithelial cells", "25" = "T cells"
+)
+
+data.combined$broad_label <- plyr::mapvalues(
+  data.combined$seurat_clusters,
+  from = names(cluster_annotations),
+  to   = cluster_annotations
+)
+
+Idents(data.combined) <- data.combined$broad_label
+DimPlot(data.combined, reduction = "umap", label = TRUE)
+
+saveRDS(data.combined, "RDS/data_21_umap_26_clusters.RDS")
+```
+
+---
+
+
+```{r colour_palette, message=FALSE, warning=FALSE}
+colour_palette <- c(
+  "T cells"          = "#1B9E77FF",
+  "PC"               = "#D95F02FF",
+  "Stroma"           = "#7570B3FF",
+  "Mast cells"       = "#E7298AFF",
+  "Endothelial cells"= "#66A61EFF",
+  "B cells"          = "#E6AB02FF",
+  "Myeloid"          = "#666666FF",
+  "Glia"             = "#A6761DFF",
+  "Epithelial cells" = "#E41A1CFF",
+  "Mixed"            = "#377EB8FF",
+  "Proliferating"    = "#984EA3FF"
+)
+```
+
+```{r umap_annotated, message=FALSE, warning=FALSE}
+d <- DimPlot(
+  data.combined,
+  reduction = "umap",
+  label     = FALSE,
+  pt.size   = 0.5,
+  repel     = TRUE,
+  raster    = FALSE,
+  group.by  = "broad_label"
+) +
+  scale_color_manual(values = colour_palette) +
+  guides(color = guide_legend(override.aes = list(shape = 15, size = 5), ncol = 1)) +
+  ggtitle("Broad cell-type labels")
+
+print(d)
+```
+
+```{r umap_condition, message=FALSE, warning=FALSE}
+# Exclude follow-up sample from condition plot
+plot.obj <- subset(data.combined, subset = condition != "EC2_FU")
+plot.obj$condition <- factor(plot.obj$condition,
+                             levels = c("NV", "CAR-T Control", "CAR-T Enterocolitis"))
+
+umap_df  <- as.data.frame(Embeddings(plot.obj, reduction = "umap"))
+colnames(umap_df) <- c("UMAP_1", "UMAP_2")
+meta_df  <- plot.obj@meta.data %>% select(condition)
+plot_df  <- bind_cols(umap_df, meta_df) %>% arrange(condition)
+
+p_cond <- ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = condition)) +
+  geom_point(size = 0.4) +
+  scale_color_manual(values = c(
+    "NV"                  = "grey",
+    "CAR-T Control"       = "#F5C342",
+    "CAR-T Enterocolitis" = alpha("#D4494E", 0.4)
+  )) +
+  guides(color = guide_legend(override.aes = list(size = 3, alpha = 1))) +
+  theme_classic() +
+  labs(color = "Condition", title = "UMAP by condition")
+
+p_cond
+```
+
+```{r save_umap_svg, message=FALSE, warning=FALSE}
+ggsave(
+  filename = "figs/all_celltypes_umap_condition.svg",
+  plot     = p_cond,
+  device   = svglite,
+  width    = 1600, height = 950, units = "px"
+)
+```
+
+---
+
+## Cell Counts and UMI Summary
+
+```{r sample_summary, message=FALSE, warning=FALSE}
+reads_per_sample <- data.combined@meta.data %>%
+  group_by(sample_names) %>%
+  summarise(
+    total_cells        = n(),
+    total_reads        = sum(nCount_RNA),
+    mean_reads_per_cell = mean(nCount_RNA)
+  ) %>%
+  arrange(desc(mean_reads_per_cell))
+
+reads_per_sample
+```

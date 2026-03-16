@@ -1,0 +1,276 @@
+---
+title: "05: Condition-wise DEGs and GSEA for Stromal Subset"
+output:
+  github_document:
+    html_preview: false
+---
+
+## R Libraries
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(openxlsx)
+library(stringr)
+library(clusterProfiler)
+library(msigdbr)
+library(readxl)
+```
+
+---
+
+## DEGs for All Cluster Combined
+
+```{r degs_overall, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+Idents(stromal_subset) <- "condition"
+stromal_subset <- JoinLayers(stromal_subset)
+
+pairwise_comparisons <- list(
+  c("CAR-T Enterocolitis", "CAR-T Control"),
+  c("CAR-T Enterocolitis", "NV"),
+  c("CAR-T Control",       "NV")
+)
+
+overall_markers_list <- list()
+
+for (cmp in pairwise_comparisons) {
+  ident1 <- cmp[1]
+  ident2 <- cmp[2]
+
+  if (!all(c(ident1, ident2) %in% unique(Idents(stromal_subset)))) next
+  message("Overall DEGs: ", ident1, " vs ", ident2)
+
+  data.markers <- FindMarkers(
+    stromal_subset,
+    ident.1         = ident1,
+    ident.2         = ident2,
+    only.pos        = FALSE,
+    min.pct         = 0.25,
+    logfc.threshold = 0.25,
+    test.use = "wilcox"
+  )
+
+  data.markers$gene      <- rownames(data.markers)
+  rownames(data.markers) <- NULL
+  data.markers           <- data.markers[, c("gene", setdiff(colnames(data.markers), "gene"))]
+  data.markers$cluster   <- "all"
+
+  list_name <- paste0("all_", ident1, "_vs_", ident2)
+  overall_markers_list[[list_name]] <- data.markers
+
+  write.csv(
+    data.markers,
+    file = paste0("csvs/condition_DEGs/cluster_wise/stromal_subset_all_",
+                  ident1, "_vs_", ident2, ".csv"),
+    row.names = FALSE
+  )
+}
+```
+
+---
+
+## Per Subcluster DEGs
+
+```{r degs_per_subcluster, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+DefaultAssay(stromal_subset) <- "RNA"
+Idents(stromal_subset)       <- "cluster_label"
+stromal_subset$subcluster    <- Idents(stromal_subset)
+stromal_subset <- JoinLayers(stromal_subset)
+
+markers_list <- list()
+
+for (cluster in unique(stromal_subset$subcluster)) {
+  message("Processing subcluster: ", cluster)
+
+  subcluster_data    <- subset(stromal_subset, subset = subcluster == cluster)
+  Idents(subcluster_data) <- "condition"
+
+  for (cmp in pairwise_comparisons) {
+    ident1 <- cmp[1]
+    ident2 <- cmp[2]
+
+    if (!all(c(ident1, ident2) %in% unique(Idents(subcluster_data)))) {
+      message("  Skipping: ", ident1, " vs ", ident2, " (missing condition in ", cluster, ")")
+      next
+    }
+
+    message("  Comparing: ", ident1, " vs ", ident2)
+
+    markers <- FindMarkers(
+      subcluster_data,
+      ident.1         = ident1,
+      ident.2         = ident2,
+      only.pos = FALSE,
+      min.pct = 0.25,
+      logfc.threshold = 0.25,
+      test.use = "wilcox"
+    )
+
+    markers$cluster    <- cluster
+    markers$comparison <- paste0(ident1, "_vs_", ident2)
+    markers$gene       <- rownames(markers)
+
+    list_name <- paste0("stromal_subset_cluster_", cluster, "_", ident1, "_vs_", ident2)
+    markers_list[[list_name]] <- markers
+  }
+}
+
+# Save per-cluster CSV files
+for (name in names(markers_list)) {
+  write.csv(
+    markers_list[[name]],
+    file      = paste0("csvs/condition_DEGs/cluster_wise/", name, ".csv"),
+    row.names = FALSE
+  )
+}
+```
+
+## Gene Sets
+
+```{r gene_sets, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+human_gobp_sets     <- msigdbr(species = "Homo sapiens", collection = "C5", subcollection = "GO:BP")
+human_kegg_sets     <- msigdbr(species = "Homo sapiens", collection = "C2", subcollection = "CP:KEGG_LEGACY")
+human_reactome_sets <- msigdbr(species = "Homo sapiens", collection = "C2", subcollection = "CP:REACTOME")
+
+human_gene_sets <- rbind(human_gobp_sets, human_kegg_sets, human_reactome_sets)
+```
+
+```{r gsea_wrapper, message=FALSE, warning=FALSE}
+# GSEA wrapper
+gsea_human <- function(df) {
+  lfc_vector <- setNames(df$avg_log2FC, df$gene)
+  lfc_vector <- sort(lfc_vector, decreasing = TRUE)
+
+  clusterProfiler::GSEA(
+    geneList     = lfc_vector,
+    TERM2GENE    = human_gene_sets[, c("gs_name", "gene_symbol")],
+    minGSSize    = 5,
+    maxGSSize    = 500,
+    pvalueCutoff = 1,
+    eps          = 0,
+    verbose      = FALSE
+  )
+}
+```
+
+## GSEA Per Subcluster
+
+
+```{r run_gsea,  message=FALSE, warning=FALSE}
+csv_dir  <- "csvs/condition_DEGs/cluster_wise"
+gsea_dir <- "csvs/condition_GSEA/"
+dir.create(gsea_dir, recursive = TRUE, showWarnings = FALSE)
+
+for (cmp in pairwise_comparisons) {
+  cond1 <- cmp[1]; cond2 <- cmp[2]
+  message("GSEA: ", cond1, " vs ", cond2)
+
+  csv_files <- list.files(
+    csv_dir,
+    pattern   = paste0(cond1, "_vs_", cond2, "\\.csv$"),
+    full.names = TRUE
+  )
+
+  all_gsea_results <- list()
+
+  for (csv_path in csv_files) {
+      subcluster_name <- sub(paste0("^stromal_subset_(.+?)_", cond1, "_vs_", cond2, "$"), "\\1", tools::file_path_sans_ext(basename(csv_path)))
+    df <- read.csv(csv_path)
+
+    if (!("gene" %in% colnames(df)) || nrow(df) < 10) {
+      warning("Skipping: ", subcluster_name)
+      next
+    }
+
+    gsea_res <- gsea_human(df)
+    res_df   <- gsea_res@result
+    res_df$subcluster <- subcluster_name
+    all_gsea_results[[subcluster_name]] <- res_df
+  }
+
+  if (length(all_gsea_results) > 0) {
+    write.xlsx(
+      do.call(rbind, all_gsea_results),
+      file = file.path(gsea_dir, paste0("stromal_subset_GSEA_", cond1, "_vs_", cond2, ".xlsx"))
+    )
+  }
+}
+```
+
+## GSEA Dot Plots
+
+```{r gsea_dotplots, message=FALSE, warning=FALSE}
+plot_nes_dotplot <- function(gsea_df, subcluster, cond1, cond2, top_n = 15) {
+  subcluster_clean <- sub("^cluster_", "", subcluster)
+  sig <- gsea_df %>% filter(qvalue < 0.05)
+
+  if (nrow(sig) == 0) {
+    return(ggplot() +
+             annotate("text", x = 0, y = 0,
+                      label = paste0("No significant pathways\n", subcluster_clean,
+                                     "\n", cond1, " vs ", cond2)) +
+             theme_void())
+  }
+
+  plot_df <- bind_rows(
+    sig %>% filter(NES > 0) %>% arrange(desc(NES)) %>% head(top_n),
+    sig %>% filter(NES < 0) %>% arrange(NES)       %>% head(top_n)
+  ) %>%
+    mutate(Description = factor(Description, levels = Description[order(NES)]))
+
+  ggplot(plot_df, aes(x = NES, y = Description, size = setSize, color = qvalue)) +
+    geom_point(alpha = 0.9) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+    scale_color_gradient(low = "navy", high = "firebrick", trans = "reverse",
+                         name = "Adj. p-value") +
+    scale_size_continuous(name = "Gene set size", range = c(2, 8)) +
+    labs(
+      title = paste0(subcluster_clean, " (", cond1, " vs ", cond2, ")"),
+      x = "Normalized Enrichment Score (NES)", y = NULL
+    ) +
+    theme_classic(base_size = 11) +
+    theme(axis.text.y = element_text(size = 7), plot.title = element_text(face = "bold"))
+}
+```
+
+```{r gsea_display_loop, results='asis', message=FALSE, warning=FALSE}
+gsea_dir <- "csvs/condition_GSEA/"
+
+for (cmp in pairwise_comparisons) {
+  cond1 <- cmp[1]; cond2 <- cmp[2]
+
+  gsea_file <- file.path(gsea_dir,
+                         paste0("stromal_subset_GSEA_", cond1, "_vs_", cond2, ".xlsx"))
+  combined_results <- as.data.frame(read_excel(gsea_file))
+  clusters         <- unique(combined_results$subcluster)
+
+  plots_by_cluster <- list()
+  for (clust in clusters) {
+    gsea_df <- combined_results %>% filter(subcluster == clust)
+    plots_by_cluster[[clust]] <- list(
+      dot = plot_nes_dotplot(gsea_df, clust, cond1, cond2)
+    )
+  }
+
+  cat("## ", cond1, " vs ", cond2, " {.tabset}\n\n")
+
+  for (name in names(plots_by_cluster)) {
+    subcluster_clean <- sub("^cluster_", "", name)
+    cat("### ", subcluster_clean, " {.tabset}\n\n")
+
+    cat("#### NES Dot Plot\n\n")
+    print(plots_by_cluster[[name]]$dot)
+    cat("\n\n")
+  }
+}
+```
+

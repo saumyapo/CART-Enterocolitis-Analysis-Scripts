@@ -1,0 +1,136 @@
+---
+title: "06: Stromal Subset CLR Cell Frequency Analysis"
+output:
+  github_document:
+    html_preview: false
+---
+
+## R Libraries
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(emmeans)
+library(ggplot2)
+library(compositions)
+library(purrr)
+library(forcats)
+library(writexl)
+library(readxl)
+library(svglite)
+library(tidyr)
+```
+---
+
+## Per-Sample Proportions
+
+```{r cell_proportions, message=FALSE, warning=FALSE}
+stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+
+meta <- stromal_subset@meta.data %>%
+  dplyr::filter(condition %in% c("NV", "CAR-T Control", "CAR-T Enterocolitis")) %>%
+  mutate(condition = fct_relevel(condition, "CAR-T Enterocolitis", "CAR-T Control", "NV")) %>%
+  as.data.frame()
+
+per_sample_counts <- meta %>%
+  dplyr::count(sample_names, seurat_clusters) %>%
+  group_by(sample_names) %>%
+  mutate(
+    total_cells_sample = sum(n),
+    pct_within_sample  = n / total_cells_sample * 100
+  ) %>%
+  ungroup() %>%
+  left_join(meta %>% dplyr::select(sample_names, condition) %>% distinct(),
+            by = "sample_names")
+
+head(per_sample_counts)
+```
+
+---
+
+## CLR Transformation
+
+```{r clr_transform, message=FALSE, warning=FALSE}
+clr_df <- per_sample_counts %>%
+  dplyr::select(sample_names, condition, seurat_clusters, pct_within_sample) %>%
+  pivot_wider(names_from = seurat_clusters, values_from = pct_within_sample, values_fill = 0)
+
+clr_mat <- clr(as.matrix(clr_df %>% dplyr::select(-sample_names, -condition)))
+
+clr_long <- as.data.frame(clr_mat) %>%
+  mutate(sample_names = clr_df$sample_names, condition = clr_df$condition) %>%
+  pivot_longer(cols = -c(sample_names, condition), names_to = "cluster", values_to = "clr_value")
+```
+
+---
+
+## Linear Model + emmeans
+
+```{r lm_emmeans, message=FALSE, warning=FALSE}
+diff_df <- clr_long %>%
+  split(.$cluster) %>%
+  map_dfr(~ {
+    f  <- lm(clr_value ~ condition, data = .x)
+    em <- emmeans(f, pairwise ~ condition, ref = "NV", adjust = "none", infer = TRUE)
+    as.data.frame(em[[2]]) %>% mutate(cluster = unique(.x$cluster))
+  }) %>%
+  filter(grepl("NV", contrast)) %>%
+  group_by(cluster) %>%
+  mutate(p.adjust = p.adjust(p.value, method = "BH")) %>%
+  ungroup() %>%
+  mutate(
+    signif = case_when(
+      p.adjust < 0.001 ~ "***", p.adjust < 0.01 ~ "**", p.adjust < 0.05 ~ "*", TRUE ~ ""
+    ),
+    est_label = sprintf("%+.2f%s", estimate, signif),
+    condition = gsub(" - NV", "", contrast)
+  ) %>%
+  arrange(desc(cluster)) %>%
+  mutate(cluster = factor(cluster, levels = unique(cluster)))
+
+write_xlsx(diff_df, "csvs/stroma_clusterwise_CLR_cond_vs_NV.xlsx")
+```
+
+---
+
+## Forest Plot
+
+```{r forest_plot, message=FALSE, warning=FALSE}
+diff_df <- read_excel("csvs/stroma_clusterwise_CLR_cond_vs_NV.xlsx")
+diff_df$cluster <- factor(diff_df$cluster, levels = unique(diff_df$cluster))
+
+p <- ggplot(diff_df, aes(x = estimate, y = cluster, color = condition)) +
+  geom_errorbar(aes(xmin = lower.CL, xmax = upper.CL),
+                position = position_dodge(width = 0.55), height = 0.2) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_point(position = position_dodge(width = 0.55), size = 2) +
+  geom_text(aes(x = upper.CL + 0.25, label = est_label, group = condition),
+            position = position_dodge(width = 0.55),
+            vjust = 0.3, size = 1.8, color = "black", show.legend = FALSE) +
+  scale_color_manual(values = c(
+    "(CAR-T Control)"       = "#F5C342",
+    "(CAR-T Enterocolitis)" = "#D4494E"
+  )) +
+  labs(x = "CLR difference vs NV", y = "Stromal cluster", color = "Condition",
+       title = "Stromal Subset: CLR-normalised Frequency Differences vs NV") +
+  scale_x_continuous(breaks = seq(-100, 100, by = 1)) +
+  coord_cartesian(clip = "off") +
+  theme_minimal() +
+  theme(
+    axis.text     = element_text(size = 6, color = "black"),
+    axis.title    = element_text(size = 7, color = "black"),
+    panel.grid    = element_blank(),
+    axis.line     = element_line(color = "black"),
+    legend.position = "bottom"
+  )
+
+print(p)
+```
+
+```{r save_forest, message=FALSE, warning=FALSE}
+ggsave("figs/stroma_cell_freq_forest_plot.svg",
+       plot = p, 
+       device = svglite, 
+       width = 600, 
+       height = 800,
+       units = "px")
+```

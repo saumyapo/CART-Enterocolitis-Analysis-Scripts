@@ -1,0 +1,233 @@
+---
+title: "07: Stromal Subset Figures"
+output:
+  github_document:
+    html_preview: false
+---
+
+
+```{r setup, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+library(svglite)
+library(systemfonts)
+library(data.table)
+library(scales) 
+```
+
+---
+
+## Stacked bar 
+
+```{r stacked-bar-cluster, message=FALSE, warning=FALSE}
+stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+
+meta <- stromal_subset@meta.data %>%
+  filter(condition %in% c("NV", "CAR-T Control", "CAR-T Enterocolitis"))
+
+per_sample_counts <- meta %>%
+  dplyr::count(sample_names, seurat_clusters) %>%
+  group_by(sample_names) %>%
+  mutate(total_cells_sample = sum(n),
+         pct_within_sample = n / total_cells_sample * 100) %>%
+  ungroup()
+
+sample_map <- meta %>% dplyr::select(sample_names, condition) %>% distinct()
+per_sample_counts <- per_sample_counts %>%
+  left_join(sample_map, by = "sample_names")
+
+summary_avg <- per_sample_counts %>%
+  group_by(condition, seurat_clusters) %>%
+  summarise(mean_pct = mean(pct_within_sample),
+            sd_pct   = sd(pct_within_sample),
+            n_donors = n(),
+            .groups = "drop")
+
+summary_avg$condition <- factor(summary_avg$condition,
+                                levels = c("NV", "CAR-T Control", "CAR-T Enterocolitis"))
+
+colour_palette <- c(
+  "#1B9E77FF", "#D95F02FF", "#7570B3FF", "#E7298AFF",
+  "#66A61EFF", "#E6AB02FF", "#666666FF", "#A6761DFF",
+  "#E41A1CFF", "#377EB8FF", "#984EA3FF"
+)
+
+names(colour_palette) <- sort(unique(summary_avg$seurat_clusters))
+
+p_sc <- ggplot(summary_avg, aes(x = condition, y = mean_pct, fill = seurat_clusters)) +
+  geom_col(position = "fill") +
+  scale_fill_manual(values = colour_palette) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(y = "Proportion per condition (%)", x = NULL, fill = NULL) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major.x = element_blank())
+
+print(p_sc)
+```
+
+```{r save-stacked-cluster, message=FALSE, warning=FALSE}
+pdf("pdfs/stromal_subset_stacked_bar_seurat_cluster.pdf", width = 8, height = 10, useDingbats = FALSE)
+print(p_sc)
+dev.off()
+```
+
+
+
+```{r bubbleplot-fn, message=FALSE, warning=FALSE}
+
+set.seed(2024)
+
+sc_bubbleplot <- function(
+    seu,
+    genes,
+    group_by    = "seurat_clusters",
+    assay       = "RNA",
+    slot        = "data",
+    scale_gene  = TRUE,
+    groups_keep = NULL,
+    dot_range   = c(0, 8),
+    x_expand    = c(0.6, 0),
+    y_expand    = c(0, 0.5),
+    sort_condition = NULL,
+    sort_weights   = c(expr = 1, prop = 1)
+) {
+  genes <- intersect(genes, rownames(seu))
+  stopifnot(length(genes) > 1)
+
+  seu  <- JoinLayers(seu)
+  expr <- GetAssayData(seu, assay = assay, slot = slot)
+
+  dt <- as.data.table(t(expr[genes, ]), keep.rownames = "cell")
+  dt[, grpBy := seu@meta.data[[group_by]]]
+
+  if (!is.null(groups_keep)) dt <- dt[grpBy %in% groups_keep]
+
+  dt <- melt(dt, id.vars = c("cell", "grpBy"),
+             variable.name = "geneName", value.name = "val")
+
+  # Convert from log-normalised to counts, then back to log1p mean
+  dt[, val := expm1(val)]
+
+  ggData <- dt[, .(val  = mean(val),
+                   prop = sum(val > 0) / .N),
+               by = .(geneName, grpBy)]
+  ggData[, val := log1p(val)]
+
+  if (scale_gene) ggData[, val := scale(val), by = geneName]
+
+  # Hierarchical clustering to order groups
+  mat_hc <- dcast(ggData, geneName ~ grpBy, value.var = "val", fill = 0)
+  mat_hc <- as.matrix(mat_hc[, -1])
+  rownames(mat_hc) <- unique(ggData$geneName)
+  hc <- hclust(dist(t(mat_hc)), method = "ward.D2")
+  ggData[, grpBy := factor(grpBy, levels = colnames(mat_hc)[hc$order])]
+
+  if (!is.null(sort_condition)) {
+    stopifnot(sort_condition %in% ggData$grpBy)
+    gene_order <- ggData[grpBy == sort_condition,
+                         .(score = sort_weights["expr"] * val +
+                                   sort_weights["prop"] * prop),
+                         by = geneName][order(-score), geneName]
+    ggData[, geneName := factor(geneName, levels = gene_order)]
+  }
+
+  ggplot(ggData, aes(grpBy, geneName)) +
+    geom_point(aes(fill = val, size = prop),
+               shape = 21, color = "black", stroke = 0.25) +
+    scale_size_continuous(
+      name   = "proportion",
+      range  = dot_range,
+      limits = c(0, 1),
+      breaks = c(0, 0.25, 0.5, 0.75, 1)
+    ) +
+    scale_fill_gradient2(
+      low  = "navy", mid = "white", high = "firebrick",
+      name = ifelse(scale_gene, "scaled expression", "expression")
+    ) +
+    scale_x_discrete(limits = c('NV','CTRL2','CTRL3','CTRL4','CTRL5','CTRL7','EC1','EC2','EC3','EC4'),
+                     expand = x_expand) +
+    scale_y_discrete(expand = y_expand) +
+    theme_classic() +
+    theme(
+      axis.title   = element_blank(),
+      axis.text.x  = element_text(angle = 45, hjust = 1)
+    ) +
+    coord_cartesian(clip = "off") +
+    guides(size = guide_legend(
+      override.aes = list(fill = "black", color = "black", shape = 21, stroke = 0.25)
+    ))
+}
+```
+
+---
+
+## Cluster-wise Annotation Bubble Plot
+
+```{r bubble-cluster, message=FALSE, warning=FALSE}
+stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+
+markers_annot <- c(
+  "CD34",  "GREM2",  "GREM1",  "RSPO3",  "FGF10",  "FGF7",  "WNT2B",
+  "ADAMDEC1", "ABCA8", "DCN",  "FBLN1",  "VCAM1",  "TNFSF10", "CCL13",
+  "CCL11", "MEG3",   "ROR1",   "SLIT2",  "ROBO1",  "RGS5",  "NOTCH3",
+  "PDGFRB", "MYO1B", "ABCC9",  "MYH11",  "TAGLN",  "ACTA2", "TPM2",
+  "CNN1",  "ACTG2",  "POSTN",  "PDGFRA", "SOX6",   "TGFB1"
+)
+
+p_bub <- sc_bubbleplot(
+  seu        = stromal_subset,
+  genes      = markers_annot,
+  group_by   = "seurat_clusters",
+  groups_keep = c("0", "1", "2", "3", "4", "5", "6", "7"),
+  scale_gene = TRUE,
+  x_expand   = c(0.1, 0)
+)
+
+print(p_bub)
+```
+
+```{r save-bubble, message=FALSE, warning=FALSE}
+svglite("figs/stromal_subset_annotation_bubbleplot.svg", width = 4, height = 6)
+print(p_bub)
+dev.off()
+```
+
+---
+
+## Condition-wise Bubble Plot
+
+```{r bubble-patient, message=FALSE, warning=FALSE}
+
+markers_patient <- c("CXCL6", "IL7", "RELB", "STAT5B", "JAK2", "TNFAIP3", "IRF9", "ICAM1", "VCAM1", "CXCL1", "GBP1", "CCL11", "IRF1", "STAT1", "CCL2", "NFKB1", "SOCS3", "OSMR", "IL1R1", "STAT3", "IFITM1")
+
+p_bub_pt <- sc_bubbleplot(
+  seu          = stromal_subset,
+  genes        = markers_patient,
+  group_by     = "category",
+  groups_keep  = c("NV", "CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7", "EC1", "EC2", "EC3", "EC4"),
+  scale_gene   = TRUE,
+  sort_condition = "EC4",
+  sort_weights   = c(expr = 0, prop = 1)
+)
+
+p_bub_pt <- p_bub_pt +
+  annotate("rect", xmin = 0.5, xmax = 1.5,  ymin = -Inf, ymax = Inf,
+           fill = NA, color = "black", linewidth = 0.3) +
+  annotate("rect", xmin = 1.5, xmax = 6.5,  ymin = -Inf, ymax = Inf,
+           fill = NA, color = "black", linewidth = 0.3) +
+  annotate("rect", xmin = 6.5, xmax = 10.5, ymin = -Inf, ymax = Inf,
+           fill = NA, color = "black", linewidth = 0.3)
+
+print(p_bub_pt)
+```
+
+```{r save-bubbleplot, message=FALSE, warning=FALSE }
+svglite("figs/stromal_subset_cytokine_bubbleplot.svg", width = 4, height = 6)
+print(p_bub_pt)
+dev.off()
+```
+

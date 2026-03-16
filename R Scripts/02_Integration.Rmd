@@ -1,0 +1,102 @@
+---
+title: "02: Integration"
+output:
+  github_document:
+    html_preview: false
+---
+
+
+```{r libraries, results=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(harmony)
+```
+
+---
+
+## Integration
+
+```{r harmony_integration, message=FALSE, warning=FALSE}
+set.seed(2024)
+
+data.combined <- readRDS("RDS/data_filtered_umap.RDS")
+
+data.combined_copy <- data.combined
+
+# Identify and remove IG genes from HVG candidates
+ig_genes  <- grep("^IG[HKL][VDJC]", rownames(data.combined_copy), value = TRUE)
+genes_keep <- setdiff(rownames(data.combined_copy), ig_genes)
+
+data_no_ig <- subset(data.combined_copy, features = genes_keep)
+data_no_ig <- NormalizeData(data_no_ig)
+data_no_ig <- FindVariableFeatures(data_no_ig, selection.method = "vst", nfeatures = 2000)
+
+hvg_no_ig <- VariableFeatures(data_no_ig)
+VariableFeatures(data.combined) <- hvg_no_ig
+
+data.combined <- NormalizeData(data.combined)
+data.combined <- ScaleData(data.combined, vars.to.regress = "percent.mt", verbose = TRUE)
+data.combined <- RunPCA(data.combined, npcs = 50, features = VariableFeatures(data.combined))
+ElbowPlot(data.combined, ndims = 50)
+
+data.combined <- RunHarmony(
+  data.combined,
+  group.by.vars = c("sample_names", "chemistry"),
+  dims.use = 1:30
+)
+
+ElbowPlot(data.combined, reduction = "harmony", ndims = 50)
+data.combined <- RunUMAP(data.combined, reduction = "harmony", dims = 1:30)
+
+saveRDS(data.combined, "RDS/data_Integrated_21_umap.RDS")
+```
+
+---
+
+## UMAP Before Integration {.tabset}
+
+```{r umap_before, results='asis', message=FALSE, warning=FALSE}
+data.bf <- readRDS("RDS/data_filtered_umap.RDS")
+
+cat("## Split by chemistry \n")
+DimPlot(data.bf, reduction = "umap",
+        split.by = "chemistry", group.by = "chemistry", ncol = 2) +
+  ggtitle("Before integration by chemistry") + NoLegend()
+cat(" \n \n")
+
+cat("## All samples \n")
+DimPlot(data.bf, reduction = "umap", group.by = "sample_names") +
+  ggtitle("Before integration") + theme(legend.position = "none")
+cat(" \n \n")
+
+cat("## Condition \n")
+DimPlot(data.bf, reduction = "umap", group.by = "condition") +
+  ggtitle("Before integration by condition")
+cat(" \n \n")
+```
+
+---
+
+## UMAP After Harmony Integration {.tabset}
+
+```{r umap_after, results='asis', message=FALSE, warning=FALSE}
+data.combined <- readRDS("RDS/data_Integrated_21_umap.RDS")
+
+cat("## Split by chemistry \n")
+DimPlot(data.combined, reduction = "umap",
+        split.by = "chemistry", group.by = "chemistry", ncol = 2) +
+  ggtitle("After integration by chemistry") + NoLegend()
+cat(" \n \n")
+
+cat("## All samples \n")
+DimPlot(data.combined, reduction = "umap", group.by = "sample_names") +
+  ggtitle("After integration") + theme(legend.position = "none")
+cat(" \n \n")
+
+cat("## Condition \n")
+DimPlot(data.combined, reduction = "umap", group.by = "condition") +
+  ggtitle("After integration by condition")
+cat(" \n \n")
+```
+
