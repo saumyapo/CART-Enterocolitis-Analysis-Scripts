@@ -19,7 +19,7 @@ Repository containing code used to analyze single-cell RNA-seq data published in
     </td>
     <td valign="top">
 <b>Cell Frequency</b><br>
-<a href="https://www.compositionaldata.com/"><img src="https://img.shields.io/badge/compositions-v2.0.8-f57c00?style=flat-square"/></a>
+<a href="https://http://www.stat.boogaart.de/compositions/"><img src="https://img.shields.io/badge/compositions-v2.0.8-f57c00?style=flat-square"/></a>
 <a href="https://rvlenth.github.io/emmeans/"><img src="https://img.shields.io/badge/emmeans-v1.10.4-ef6c00?style=flat-square"/></a><br><br>
 <b>Visualisation</b><br>
 <a href="https://ggplot2.tidyverse.org/"><img src="https://img.shields.io/badge/ggplot2-v4.0.1-e91e63?style=flat-square"/></a>
