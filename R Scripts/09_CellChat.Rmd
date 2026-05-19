@@ -1,0 +1,66 @@
+
+
+```{r, eval = FALSE, results = FALSE, message=FALSE, warning=FALSE}
+library(CellChat)
+library(Seurat)
+
+data.combined <- readRDS("../../RDS/all_celltypes/data_23_umap_30_clusters.RDS")
+data.combined <- JoinLayers(data.combined)
+DefaultAssay(data.combined) <- "RNA"
+data.combined$samples <- data.combined$sample_names
+
+CellChatDB <- CellChatDB.human
+
+sampleNames <- unique(data.combined$sample_names)
+
+for (samp in sampleNames) {
+  
+  message("Processing: ", samp)
+  
+  rds_path <- paste0("../../RDS/all_celltypes/cellchat/per_sample/cellchat_", samp, ".RDS")
+  csv_path <- paste0("../../csvs/all_celltypes/cellchat/per_sample/cellchat_", samp, ".csv")
+  
+  # Skip if already done
+  if (file.exists(rds_path)) {
+    message("Already exists, skipping: ", samp)
+    next
+  }
+  
+  # Subset to sample
+  data_samp <- subset(data.combined, sample_names == samp)
+  
+  min_cells <- 10
+  cell_type_counts <- table(data_samp$new_ident)
+  valid_types <- names(cell_type_counts[cell_type_counts >= min_cells])
+  data_samp <- subset(data_samp, new_ident %in% valid_types)
+  
+  tryCatch({
+    
+    cc <- createCellChat(object = data_samp, group.by = "new_ident")
+    cc@DB <- CellChatDB
+    cc <- subsetData(cc)
+    cc <- identifyOverExpressedGenes(cc)
+    cc <- identifyOverExpressedInteractions(cc)
+    cc <- computeCommunProb(cc, nboot = 20)
+    cc <- filterCommunication(cc, min.cells = 3)
+    cc <- computeCommunProbPathway(cc)
+    cc <- aggregateNet(cc)
+    cc <- netAnalysis_computeCentrality(cc, slot.name = "netP")
+    
+    # Save RDS
+    saveRDS(cc, rds_path)
+    
+    # Save CSV of all LR-level interactions
+    df.net <- subsetCommunication(cc)
+    df.net$sample <- samp
+    df.net$condition <- unique(data_samp$condition)
+    write.csv(df.net, csv_path, row.names = FALSE)
+    
+    message("Done: ", samp)
+    
+  }, error = function(e) {
+    message("ERROR on sample ", samp, ": ", e$message)
+  })
+  
+}
+```
