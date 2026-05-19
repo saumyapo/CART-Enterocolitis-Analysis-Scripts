@@ -43,7 +43,7 @@ CART-Enterocolitis-Analysis-Scripts/
 │   ├── 06_CLR_CellFreq_Stroma.Rmd              # CLR cell-frequency analysis + forest plots (stromal shown; same workflow applied globally  and to all other subsets)
 │   ├── 07_Figs_Stroma.Rmd                      # Figures for stromal subset (bubble plots, stacked bars, condition plots, etc.)
 │   └── 08_CAR_Mapping_and_Figs.Rmd             # Certomics CAR+ cell mapping onto T cell subset, heatmaps, pie plots, etc.
-│   └── 09_Sample_Wise_CellChat.Rmd             # Sample-wise CellChat that was aggregated and analyzed further using regression model
+│   └── 09_CellChat.Rmd                         # Sample-wise CellChat that was aggregated and analyzed further using regression model
 ├── sessionInfo.md                              # Full R session information and package versions
 └── README.md
 ```
