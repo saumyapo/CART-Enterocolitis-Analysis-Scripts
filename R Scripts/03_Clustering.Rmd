@@ -22,17 +22,17 @@ library(svglite)
 ```{r clustering, message=FALSE, warning=FALSE}
 set.seed(2024)
 
-data.combined <- readRDS("RDS/data_Integrated_21_umap.RDS")
+data.combined <- readRDS("RDS/data_Integrated_23_umap.RDS")
 Idents(data.combined) <- "sample_names"
 
 data.combined <- FindNeighbors(data.combined, reduction = "harmony", dims = 1:30)
 data.combined <- FindClusters(data.combined, resolution = 0.8)
 
-saveRDS(data.combined, "RDS/data_21_umap_26_clusters.RDS")
+saveRDS(data.combined, "RDS/data_23_umap_30_clusters.RDS")
 ```
 
 ```{r load_clustered, message=FALSE, warning=FALSE}
-data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
 Idents(data.combined) <- "seurat_clusters"
 
 DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE,
@@ -45,7 +45,7 @@ DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE,
 ## Cluster Markers (FindAllMarkers)
 
 ```{r find_markers,  message=FALSE, warning=FALSE}
-data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
 DefaultAssay(data.combined) <- "RNA"
 Idents(data.combined) <- "seurat_clusters"
 data.combined <- JoinLayers(data.combined)
@@ -67,7 +67,7 @@ for (cl in unique(data.markers$cluster)) {
   writeData(wb, paste0("cluster_", cl), data.markers %>% filter(cluster == cl))
 }
 
-saveWorkbook(wb, "csvs/data_21_all_markers_seurat_clusters.xlsx", overwrite = TRUE)
+saveWorkbook(wb, "csvs/data_23_all_markers_seurat_clusters.xlsx", overwrite = TRUE)
 ```
 
 ---
@@ -75,35 +75,37 @@ saveWorkbook(wb, "csvs/data_21_all_markers_seurat_clusters.xlsx", overwrite = TR
 ## Cell-Type Annotations
 
 ```{r cluster_annotation, message=FALSE, warning=FALSE}
-data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
 Idents(data.combined) <- "seurat_clusters"
 
 cluster_annotations <- c(
-  "0"  = "T cells",          "1"  = "PC",
-  "2"  = "T cells",          "3"  = "Stroma",
-  "4"  = "PC",               "5"  = "Mast cells",
-  "6"  = "Endothelial cells","7"  = "B cells",
-  "8"  = "Myeloid",          "9"  = "Stroma",
-  "10" = "T cells",          "11" = "Stroma",
-  "12" = "Stroma",           "13" = "Glia",
-  "14" = "Myeloid",          "15" = "Endothelial cells",
-  "16" = "Epithelial cells", "17" = "Mixed",
-  "18" = "Proliferating",    "19" = "Stroma",
-  "20" = "Myeloid",          "21" = "Myeloid",
-  "22" = "Epithelial cells", "23" = "PC",
-  "24" = "Epithelial cells", "25" = "T cells"
+  "0"  = "CD4 T cells",          "15" = "Endothelial cells",
+  "1"  = "Plasma cells",         "16" = "Glial cells",
+  "2"  = "CD8 T cells",          "17" = "GDT/NK-like",
+  "3"  = "Stromal cells",        "18" = "Mixed",
+  "4"  = "Endothelial cells",    "19" = "Stromal cells",
+  "5"  = "Mast cells",           "20" = "Proliferating cells",
+  "6"  = "Plasma cells",         "21" = "Myeloid cells",
+  "7"  = "Myeloid cells",        "22" = "Epithelial cells",
+  "8"  = "B cells",              "23" = "Plasma cells",
+  "9"  = "Stromal cells",        "24" = "Stromal cells",
+  "10" = "Myeloid cells",        "25" = "Epithelial cells",
+  "11" = "CD4 T cells",          "26" = "Mixed",
+  "12" = "Epithelial cells",     "27" = "Endothelial cells",
+  "13" = "Stromal cells",        "28" = "Plasma cells",
+  "14" = "Stromal cells",        "29" = "Stromal cells"
 )
 
-data.combined$broad_label <- plyr::mapvalues(
+data.combined$cluster_label <- plyr::mapvalues(
   data.combined$seurat_clusters,
   from = names(cluster_annotations),
   to   = cluster_annotations
 )
 
-Idents(data.combined) <- data.combined$broad_label
+Idents(data.combined) <- data.combined$cluster_label
 DimPlot(data.combined, reduction = "umap", label = TRUE)
 
-saveRDS(data.combined, "RDS/data_21_umap_26_clusters.RDS")
+saveRDS(data.combined, "RDS/data_23_umap_30_clusters.RDS")
 ```
 
 ---
@@ -133,7 +135,7 @@ d <- DimPlot(
   pt.size   = 0.5,
   repel     = TRUE,
   raster    = FALSE,
-  group.by  = "broad_label"
+  group.by  = "cluster_label"
 ) +
   scale_color_manual(values = colour_palette) +
   guides(color = guide_legend(override.aes = list(shape = 15, size = 5), ncol = 1)) +
@@ -143,8 +145,7 @@ print(d)
 ```
 
 ```{r umap_condition, message=FALSE, warning=FALSE}
-# Exclude follow-up sample from condition plot
-plot.obj <- subset(data.combined, subset = condition != "EC2_FU")
+
 plot.obj$condition <- factor(plot.obj$condition,
                              levels = c("NV", "CAR-T Control", "CAR-T Enterocolitis"))
 
