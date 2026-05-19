@@ -1,10 +1,19 @@
+---
+title: "09: Sample-wise CellChat"
+output:
+  github_document:
+    html_preview: false
+---
 
+## R Libraries
 
-```{r, eval = FALSE, results = FALSE, message=FALSE, warning=FALSE}
+```{r, results = FALSE, message=FALSE, warning=FALSE}
 library(CellChat)
 library(Seurat)
+```
 
-data.combined <- readRDS("../../RDS/all_celltypes/data_23_umap_30_clusters.RDS")
+```{r, results = FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
 data.combined <- JoinLayers(data.combined)
 DefaultAssay(data.combined) <- "RNA"
 data.combined$samples <- data.combined$sample_names
