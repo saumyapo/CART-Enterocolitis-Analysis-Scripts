@@ -25,7 +25,7 @@ library(readxl)
 ```{r degs_overall, message=FALSE, warning=FALSE}
 set.seed(2024)
 
-stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+stromal_subset <- readRDS("RDS/stromal_subset_umap_14_clusters.RDS")
 Idents(stromal_subset) <- "condition"
 stromal_subset <- JoinLayers(stromal_subset)
 
@@ -78,7 +78,7 @@ for (cmp in pairwise_comparisons) {
 ```{r degs_per_subcluster, message=FALSE, warning=FALSE}
 set.seed(2024)
 
-stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+stromal_subset <- readRDS("RDS/stromal_subset_umap_14_clusters.RDS")
 DefaultAssay(stromal_subset) <- "RNA"
 Idents(stromal_subset)       <- "cluster_label"
 stromal_subset$subcluster    <- Idents(stromal_subset)
