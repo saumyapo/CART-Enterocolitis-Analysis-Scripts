@@ -12,32 +12,45 @@ library(CellChat)
 library(Seurat)
 ```
 
+## Load Data and CellChat Database
+
 ```{r, results = FALSE, message=FALSE, warning=FALSE}
+# Load all celltypes Seurat object
 data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
+
 data.combined <- JoinLayers(data.combined)
 DefaultAssay(data.combined) <- "RNA"
+
+# CellChat expects a `samples` column in meta.data for per-sample analyses
 data.combined$samples <- data.combined$sample_names
 
+# Use the curated human ligand–receptor database
 CellChatDB <- CellChatDB.human
+```
 
+## Per-Sample CellChat Inference
+
+```{r, results = FALSE, message=FALSE, warning=FALSE}
 sampleNames <- unique(data.combined$sample_names)
 
 for (samp in sampleNames) {
   
   message("Processing: ", samp)
   
-  rds_path <- paste0("../../RDS/all_celltypes/cellchat/per_sample/cellchat_", samp, ".RDS")
-  csv_path <- paste0("../../csvs/all_celltypes/cellchat/per_sample/cellchat_", samp, ".csv")
+  # Output paths
+  rds_path <- paste0("RDS/cellchat/per_sample/cellchat_", samp, ".RDS")
+  csv_path <- paste0("csvs/cellchat/per_sample/cellchat_", samp, ".csv")
   
-  # Skip if already done
+  # Skip samples already processed
   if (file.exists(rds_path)) {
     message("Already exists, skipping: ", samp)
     next
   }
   
-  # Subset to sample
+  # Subset Seurat object to current sample
   data_samp <- subset(data.combined, sample_names == samp)
   
+  # Drop cell types with fewer than 10 cells
   min_cells <- 10
   cell_type_counts <- table(data_samp$new_ident)
   valid_types <- names(cell_type_counts[cell_type_counts >= min_cells])
@@ -45,21 +58,32 @@ for (samp in sampleNames) {
   
   tryCatch({
     
+    # Initialize CellChat object using cell type identity
     cc <- createCellChat(object = data_samp, group.by = "new_ident")
     cc@DB <- CellChatDB
+    
+    # Identify over-expressed ligands/receptors and the LR pairs they participate in
     cc <- subsetData(cc)
     cc <- identifyOverExpressedGenes(cc)
     cc <- identifyOverExpressedInteractions(cc)
+    
+    # Compute communication probabilities
     cc <- computeCommunProb(cc, nboot = 20)
+    
+    # Filter interactions supported by fewer than 3 cells in source or target
     cc <- filterCommunication(cc, min.cells = 3)
+    
+    # Aggregate from LR-level to pathway-level
     cc <- computeCommunProbPathway(cc)
     cc <- aggregateNet(cc)
+    
+    # Compute centrality scores per cell type
     cc <- netAnalysis_computeCentrality(cc, slot.name = "netP")
     
-    # Save RDS
+    # Save full CellChat object
     saveRDS(cc, rds_path)
     
-    # Save CSV of all LR-level interactions
+    # Export ligand–receptor-level interaction table with sample/condition annotation
     df.net <- subsetCommunication(cc)
     df.net$sample <- samp
     df.net$condition <- unique(data_samp$condition)
