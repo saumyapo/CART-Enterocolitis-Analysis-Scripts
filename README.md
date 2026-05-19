@@ -11,11 +11,11 @@ Repository containing code used to analyze single-cell RNA-seq data published in
 <a href="https://satijalab.org/seurat/"><img src="https://img.shields.io/badge/Seurat-v5.1.0-0288d1?style=flat-square"/></a> 
 <a href="https://github.com/constantAmateur/SoupX"><img src="https://img.shields.io/badge/SoupX-v1.6.2-1a73e8?style=flat-square"/></a>
 <a href="https://bioconductor.org/packages/release/bioc/vignettes/scDblFinder/inst/doc/scDblFinder.html"><img src="https://img.shields.io/badge/scDblFinder-v1.12.0-2962ff?style=flat-square"/></a>
-<a href="https://github.com/kostkalab/scds"><img src="https://img.shields.io/badge/scds-v1.14.0-276DC3?style=flat-square"/></a>
-<a href="https://portals.broadinstitute.org/harmony/"><img src="https://img.shields.io/badge/harmony-v1.2.4-1565c0?style=flat-square"/></a><br><br>
-<b>Pathway &amp; Enrichment</b><br>
+<a href="https://portals.broadinstitute.org/harmony/"><img src="https://img.shields.io/badge/harmony-v1.2.4-276DC3?style=flat-square"/></a><br><br>
+<b>Pathway Enrichment & Cell-Cell Communication</b><br>
 <a href="https://bioconductor.org/packages/release/bioc/vignettes/clusterProfiler/inst/doc/clusterProfiler.html"><img src="https://img.shields.io/badge/clusterProfiler-v4.12.6-26a69a?style=flat-square"/></a>
 <a href="https://igordot.github.io/msigdbr/"><img src="https://img.shields.io/badge/msigdbr-v25.1.1-00897b?style=flat-square"/></a>
+<a href="https://github.com/jinworks/CellChat"><img src="https://img.shields.io/badge/CellChat-v2.1.2-00796b?style=flat-square"/></a>
     </td>
     <td valign="top">
 <b>Cell Frequency</b><br>
