@@ -23,10 +23,9 @@ library(scales)
 ## Stacked bar 
 
 ```{r stacked-bar-cluster, message=FALSE, warning=FALSE}
-stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+stromal_subset <- readRDS("RDS/stromal_subset_umap_14_clusters.RDS")
 
-meta <- stromal_subset@meta.data %>%
-  filter(condition %in% c("NV", "CAR-T Control", "CAR-T Enterocolitis"))
+meta <- stromal_subset@meta.data 
 
 per_sample_counts <- meta %>%
   dplyr::count(sample_names, seurat_clusters) %>%
@@ -148,7 +147,7 @@ sc_bubbleplot <- function(
       low  = "navy", mid = "white", high = "firebrick",
       name = ifelse(scale_gene, "scaled expression", "expression")
     ) +
-    scale_x_discrete(limits = c('NV','CTRL2','CTRL3','CTRL4','CTRL5','CTRL7','EC1','EC2','EC3','EC4'),
+    scale_x_discrete(limits = c('NV','CTRL2','CTRL3','CTRL4','CTRL5','CTRL7','EC1','EC2','EC3','EC4', 'EC5', 'EC6', 'EC7'),
                      expand = x_expand) +
     scale_y_discrete(expand = y_expand) +
     theme_classic() +
@@ -208,7 +207,7 @@ p_bub_pt <- sc_bubbleplot(
   seu          = stromal_subset,
   genes        = markers_patient,
   group_by     = "category",
-  groups_keep  = c("NV", "CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7", "EC1", "EC2", "EC3", "EC4"),
+  groups_keep  = c("NV", "CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7", "EC1", "EC2", "EC3", "EC4", "EC5", "EC6", "EC7"),
   scale_gene   = TRUE,
   sort_condition = "EC4",
   sort_weights   = c(expr = 0, prop = 1)
