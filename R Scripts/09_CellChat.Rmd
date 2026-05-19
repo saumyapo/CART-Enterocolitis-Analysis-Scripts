@@ -15,7 +15,6 @@ library(Seurat)
 ## Load Data and CellChat Database
 
 ```{r, results = FALSE, message=FALSE, warning=FALSE}
-# Load all celltypes Seurat object
 data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
 
 data.combined <- JoinLayers(data.combined)
