@@ -24,10 +24,9 @@ library(tidyr)
 ## Per-Sample Proportions
 
 ```{r cell_proportions, message=FALSE, warning=FALSE}
-stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+stromal_subset <- readRDS("RDS/stromal_subset_umap_14_clusters.RDS")
 
 meta <- stromal_subset@meta.data %>%
-  dplyr::filter(condition %in% c("NV", "CAR-T Control", "CAR-T Enterocolitis")) %>%
   mutate(condition = fct_relevel(condition, "CAR-T Enterocolitis", "CAR-T Control", "NV")) %>%
   as.data.frame()
 
