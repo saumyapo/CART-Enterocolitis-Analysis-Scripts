@@ -21,11 +21,11 @@ library(openxlsx)
 # This file demonstrates subclustering for the stromal compartment. The same workflow was applied to all other subsets of interest: T cells, myeloid cells, B cells, plasma cells, epithelial cells and endothelial cells
 set.seed(2024)
 
-data.combined <- readRDS("RDS/data_21_umap_26_clusters.RDS")
+data.combined <- readRDS("RDS/data_23_umap_30_clusters.RDS")
 Idents(data.combined) <- "seurat_clusters"
 
 # Stromal clusters identified in global annotation
-stromal_subset <- subset(data.combined, idents = c("3", "9", "11", "12", "19"))
+stromal_subset <- subset(data.combined, idents = c("3","9","13","14","19", "24","29"))
 ```
 
 ---
@@ -49,14 +49,14 @@ stromal_subset <- ScaleData(stromal_subset, vars.to.regress = "percent.mt", verb
 stromal_subset <- RunPCA(stromal_subset, npcs = 50)
 ElbowPlot(stromal_subset, ndims = 50)
 
-stromal_subset <- RunHarmony(stromal_subset, "sample_names", dims.use = 1:10)
+stromal_subset <- RunHarmony(stromal_subset, "sample_names", dims.use = 1:30)
 ElbowPlot(stromal_subset, reduction = "harmony", ndims = 50)
 
-stromal_subset <- RunUMAP(stromal_subset,    reduction = "harmony", dims = 1:10)
-stromal_subset <- FindNeighbors(stromal_subset, reduction = "harmony", dims = 1:10)
-stromal_subset <- FindClusters(stromal_subset, resolution = 0.5)
+stromal_subset <- RunUMAP(stromal_subset,    reduction = "harmony", dims = 1:30)
+stromal_subset <- FindNeighbors(stromal_subset, reduction = "harmony", dims = 1:30)
+stromal_subset <- FindClusters(stromal_subset, resolution = 0.4)
 
-saveRDS(stromal_subset, "RDS/stromal_subset_umap_8_clusters.RDS")
+saveRDS(stromal_subset, "RDS/stromal_subset_umap_14_clusters.RDS")
 ```
 
 ---
@@ -64,7 +64,7 @@ saveRDS(stromal_subset, "RDS/stromal_subset_umap_8_clusters.RDS")
 ## Subcluster Markers
 
 ```{r find_markers, message=FALSE, warning=FALSE}
-stromal_subset <- readRDS("RDS/stromal_subset_umap_8_clusters.RDS")
+stromal_subset <- readRDS("RDS/stromal_subset_umap_14_clusters.RDS")
 DefaultAssay(stromal_subset) <- "RNA"
 Idents(stromal_subset)       <- "seurat_clusters"
 stromal_subset <- JoinLayers(stromal_subset)
@@ -105,14 +105,13 @@ DimPlot(stromal_subset, reduction = "umap", label = TRUE, repel = TRUE, raster =
 Idents(stromal_subset) <- "seurat_clusters"
 
 cluster_annotations <- c(
-  "0" = "Intestinal fibroblasts",
-  "1" = "Pericryptal SOX6+ teleocytes",
-  "2" = "Myofibroblasts",
-  "3" = "Pericryptal SOX6+ teleocytes",
-  "4" = "Pericytes",
-  "5" = "Crypt niche fibroblasts",
-  "6" = "Glia associated stromal cells",
-  "7" = "Intestinal fibroblasts"
+  "0" = "Inflam. fibroblasts",            "7"  = "Inflam. fibroblasts",
+  "1" = "SOX6+ teleocytes",               "8"  = "Fibroblasts",
+  "2" = "Myofibroblasts",                 "9"  = "Pericytes",
+  "3" = "SOX6+ teleocytes",               "10" = "FDC/stromal reticular cells",
+  "4" = "Pericytes",                      "11" = "Activated fibroblasts",
+  "5" = "Crypt associated fibroblasts",   "12" = "Myofibroblasts",
+  "6" = "Tissue fibroblasts",             "13" = "Proliferating"
 )
 
 stromal_subset$cluster_label <- plyr::mapvalues(
@@ -125,5 +124,5 @@ Idents(stromal_subset) <- stromal_subset$cluster_label
 DimPlot(stromal_subset, reduction = "umap", label = TRUE, repel = TRUE, raster = FALSE) +
   ggtitle("Stromal Subset Annotated")
 
-saveRDS(stromal_subset, "RDS/stromal_subset_umap_8_clusters.RDS")
+saveRDS(stromal_subset, "RDS/stromal_subset_umap_14_clusters.RDS")
 ```
