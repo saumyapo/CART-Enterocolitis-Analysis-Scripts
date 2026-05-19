@@ -49,7 +49,7 @@ data.combined <- RunHarmony(
 ElbowPlot(data.combined, reduction = "harmony", ndims = 50)
 data.combined <- RunUMAP(data.combined, reduction = "harmony", dims = 1:30)
 
-saveRDS(data.combined, "RDS/data_Integrated_21_umap.RDS")
+saveRDS(data.combined, "RDS/data_Integrated_23_umap.RDS")
 ```
 
 ---
@@ -81,7 +81,7 @@ cat(" \n \n")
 ## UMAP After Harmony Integration {.tabset}
 
 ```{r umap_after, results='asis', message=FALSE, warning=FALSE}
-data.combined <- readRDS("RDS/data_Integrated_21_umap.RDS")
+data.combined <- readRDS("RDS/data_Integrated_23_umap.RDS")
 
 cat("## Split by chemistry \n")
 DimPlot(data.combined, reduction = "umap",
