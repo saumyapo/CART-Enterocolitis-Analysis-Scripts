@@ -27,7 +27,7 @@ library(magrittr)
 
 ```{r params, results=FALSE, message=FALSE, warning=FALSE}
 sampleNames <- c(
-  "EC1", "EC2", "EC2_FU", "EC3", "EC4",
+  "EC1", "EC2", "EC3", "EC4", "EC5", "EC6", "EC7",
   "NV1", "NV2", "NV3", "NV4", "NV5", "NV6",
   "NV7", "NV8", "NV9", "NV10", "NV11", "CTRL2",
   "CTRL3", "CTRL4", "CTRL5", "CTRL7"
@@ -39,13 +39,9 @@ projectName <- "CAR-T LC"
 # QC thresholds
 nFeature_min  <- 200
 nFeature_max  <- 8000
-percent_mt_max <- 20
-nCount_min     <- 1000      # exceptions below
+percent_mt_max <- 20    
 nCount_max     <- 100000
-nCount_CTRL3   <- 3500      # higher minimum for CTRL3, based on per sample distribution. See line 292
-nCount_NV5   <- 1650      # higher minimum for NV5, based on per sample distribution. See line 292
 ```
-
 ---
 
 ## Ambient RNA correction (SoupX)
@@ -123,12 +119,9 @@ combined_data$sample_names <- combined_data$orig.ident
 # CAR-T Enterocolitis: Patients who received CAR-T and developed colitis
 # CAR-T Control: Patients who received CAR-T but no colitis
 # NV: Healthy controls
-# EC2: Follow-up sample
 
 sample_to_condition <- setNames(
-  ifelse(sampleNames == "EC2_FU", "EC2_FU",
-    ifelse(sampleNames %in% c("CTRL2", "CTRL3", "CTRL4", "CTRL5", "CTRL7"),
-           "CAR-T Control",
+ ifelse(grepl("^CTRL", sampleNames), "CAR-T Control",
       ifelse(grepl("^EC", sampleNames), "CAR-T Enterocolitis",
         ifelse(grepl("^NV",   sampleNames), "NV", NA)
       )
@@ -151,10 +144,6 @@ sample_to_category <- setNames(
     
     # Club all normal NV samples together
     grepl("^NV", sampleNames) ~ "NV",
-
-    # Keep follow up sample separate
-    grepl("EC2_FU", sampleNames) ~ 
-      str_extract(sampleNames, "EC2_FU"),
 
     # Keep EC samples separate 
     grepl("^EC\\d+", sampleNames) ~ 
@@ -185,8 +174,9 @@ Idents(combined_data) <- "sample_names"
 
 cluster_annotations <- c(
   "EC1"   = "3prime",  "EC2" = "3prime",
-  "EC2_FU" = "3prime",  "EC3" = "5prime",
-  "EC4"   = "5prime",  "NV1"  = "3prime",
+  "EC3" = "5prime",  "EC4"   = "5prime",  
+  "EC5" = "5prime", "EC6" = "5prime",
+  "EC7" = "5prime", "NV1"  = "3prime",
   "NV2" = "3prime",  "NV3" = "3prime",
   "NV4" = "3prime",  "NV5" = "3prime",
   "NV6" = "3prime",  "NV7" = "3prime",
@@ -255,38 +245,18 @@ add_qc_column <- function(qc_table, seurat_obj, col_name) {
 ```{r scds, message=FALSE, warning=FALSE}
 set.seed(1234)
 
-# Subset to scDblFinder singlets first
+# Subset to scDblFinder singlets
 data_singlet <- subset(combined_data, scDblFinder.class == "singlet")
 qc_table     <- add_qc_column(qc_table, data_singlet, "after_scDblFinder")
-
-# Run scds
-sce_scds <- data_singlet %>% JoinLayers() %>% as.SingleCellExperiment()
-sce_scds <- cxds(sce_scds)
-sce_scds <- bcds(sce_scds)
-sce_scds <- cxds_bcds_hybrid(sce_scds, estNdbl = TRUE)
-
-scds_res <- as.data.frame(colData(sce_scds)) %>%
-  dplyr::select(cxds_score, bcds_score, hybrid_score, cxds_call, bcds_call, hybrid_call)
-
-data_singlet <- AddMetaData(data_singlet, scds_res)
-
-data_singlet$doublet_consensus <- data_singlet$scDblFinder.class == "doublet" &
-                                   data_singlet$hybrid_call == TRUE
-
-table(data_singlet$doublet_consensus)
 ```
 
-```{r scds_filter, message=FALSE, warning=FALSE}
-data_singlet2 <- subset(data_singlet, hybrid_call == FALSE)
-qc_table      <- add_qc_column(qc_table, data_singlet2, "after_scds")
-
-saveRDS(data_singlet2, "RDS/data_dblt_filt_combined_raw.RDS")
+```{r message=FALSE, warning=FALSE}
+saveRDS(data_singlet, "RDS/data_dblt_filt_combined_raw.RDS")
 ```
 
 ---
 
 ## Selection of per-sample QC thresholds
-
 
 ```{r mito, message=FALSE, warning=FALSE}
 data <- readRDS("RDS/data_dblt_filt_combined_raw.RDS")
@@ -328,11 +298,9 @@ saveRDS(data, "RDS/data_combined_raw_umap.RDS")
 
 ---
 
-## Density plots to determine per sample QC
+## Density plots
 
 ```{r density_plots, message=FALSE, warning=FALSE}
-# Density plots were generated at this stage to examine the per-sample nCount_RNA distributions. Based on these distributions, sample-specific minimum nCount_RNA thresholds were set for CTRL3 (nCount_CTRL3 = 3500) and NV5 (nCount_NV5 = 1650) in the params block above. All QC filtering was redone to follow these cutoffs and checked again via density pltos
-
 get_data <- function(fn) {
   dat <- get(fn)
   data.table(
@@ -354,11 +322,6 @@ get_cumperc <- function(x) {
 
 dat <- get_data("data")
 
-dat_filt <- dat[
-  (sample != "CTRL3" & sample != "NV5" & nCount > nCount_min) |
-  (sample == "CTRL3" & nCount > nCount_CTRL3) |
-  (sample == "NV5"    & nCount > nCount_NV5)
-]
 dat_filt <- dat_filt[nFeature > nFeature_min & nFeature < nFeature_max &
                      percent.mt < percent_mt_max & nCount < nCount_max]
 
@@ -416,15 +379,6 @@ qc_table$nFeature_RNA_8000 <- as.numeric(table(current$sample_names)[qc_table$sa
 current <- subset(current, subset = percent.mt < percent_mt_max)
 qc_table$percent.mt_20 <- as.numeric(table(current$sample_names)[qc_table$sample])
 
-current <- subset(
-  current,
-  subset =
-    (sample_names != "CTRL3" & sample_names != "NV5" & nCount_RNA > nCount_min) |
-    (sample_names == "CTRL3" & nCount_RNA > nCount_CTRL3) |
-    (sample_names == "NV5"    & nCount_RNA > nCount_NV5)
-)
-qc_table$nCount_1000 <- as.numeric(table(current$sample_names)[qc_table$sample])
-
 current <- subset(current, subset = nCount_RNA < nCount_max)
 qc_table$nCount_100k <- as.numeric(table(current$sample_names)[qc_table$sample])
 
@@ -435,12 +389,7 @@ data_filtered <- subset(
     nFeature_RNA > nFeature_min &
     nFeature_RNA < nFeature_max &
     percent.mt   < percent_mt_max &
-    nCount_RNA   < nCount_max &
-    (
-      (sample_names != "CTRL3" & sample_names != "NV5" & nCount_RNA > nCount_min) |
-      (sample_names == "CTRL3" & nCount_RNA > nCount_CTRL3) |
-      (sample_names == "NV5"    & nCount_RNA > nCount_NV5)
-    )
+    nCount_RNA   < nCount_max
 )
 
 saveRDS(data_filtered, "RDS/data_filtered_umap.RDS")
