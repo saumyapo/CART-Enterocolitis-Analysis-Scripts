@@ -12,25 +12,34 @@ Repository containing code used to analyze single-cell RNA-seq data published in
 <a href="https://github.com/constantAmateur/SoupX"><img src="https://img.shields.io/badge/SoupX-v1.6.2-1a73e8?style=flat-square"/></a>
 <a href="https://bioconductor.org/packages/release/bioc/vignettes/scDblFinder/inst/doc/scDblFinder.html"><img src="https://img.shields.io/badge/scDblFinder-v1.12.0-2962ff?style=flat-square"/></a>
 <a href="https://portals.broadinstitute.org/harmony/"><img src="https://img.shields.io/badge/harmony-v1.2.4-276DC3?style=flat-square"/></a><br><br>
-<b>Pathway Enrichment & Cell-Cell Communication</b><br>
+<b>Pathway Enrichment</b><br>
 <a href="https://bioconductor.org/packages/release/bioc/vignettes/clusterProfiler/inst/doc/clusterProfiler.html"><img src="https://img.shields.io/badge/clusterProfiler-v4.12.6-26a69a?style=flat-square"/></a>
-<a href="https://igordot.github.io/msigdbr/"><img src="https://img.shields.io/badge/msigdbr-v25.1.1-00897b?style=flat-square"/></a>
-<a href="https://github.com/jinworks/CellChat"><img src="https://img.shields.io/badge/CellChat-v2.1.2-00796b?style=flat-square"/></a>
+<a href="https://igordot.github.io/msigdbr/"><img src="https://img.shields.io/badge/msigdbr-v25.1.1-00897b?style=flat-square"/></a><br><br>
+<b>Visualisation</b><br>
+<a href="https://ggplot2.tidyverse.org/"><img src="https://img.shields.io/badge/ggplot2-v4.0.1-e91e63?style=flat-square"/></a>
+<a href="https://jokergoo.github.io/ComplexHeatmap-reference/book/"><img src="https://img.shields.io/badge/ComplexHeatmap-v2.14.0-c2185b?style=flat-square"/></a>
+<a href="https://svglite.r-lib.org/"><img src="https://img.shields.io/badge/svglite-v2.1.3-ad1457?style=flat-square"/></a>
     </td>
     <td valign="top">
 <b>Cell Frequency</b><br>
 <a href="https://www.stat.boogaart.de/compositions/"><img src="https://img.shields.io/badge/compositions-v2.0.8-f57c00?style=flat-square"/></a>
 <a href="https://rvlenth.github.io/emmeans/"><img src="https://img.shields.io/badge/emmeans-v1.10.4-ef6c00?style=flat-square"/></a><br><br>
-<b>Visualisation</b><br>
-<a href="https://ggplot2.tidyverse.org/"><img src="https://img.shields.io/badge/ggplot2-v4.0.1-e91e63?style=flat-square"/></a>
-<a href="https://jokergoo.github.io/ComplexHeatmap-reference/book/"><img src="https://img.shields.io/badge/ComplexHeatmap-v2.14.0-c2185b?style=flat-square"/></a>
-<a href="https://svglite.r-lib.org/"><img src="https://img.shields.io/badge/svglite-v2.1.3-ad1457?style=flat-square"/></a>
+<b>Cell-Cell Communication</b><br>
+<i>R</i><br>
+<a href="https://github.com/jinworks/CellChat"><img src="https://img.shields.io/badge/CellChat-v2.1.2-b39ddb?style=flat-square"/></a><br>
+<i>Python</i><br>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-v3.8.16-9575cd?style=flat-square&logo=python&logoColor=white"/></a>
+<a href="https://www.statsmodels.org/"><img src="https://img.shields.io/badge/statsmodels-v0.14.0-7e57c2?style=flat-square"/></a>
+<a href="https://scipy.org/"><img src="https://img.shields.io/badge/SciPy-v1.10.1-5e35b1?style=flat-square"/></a>
+<a href="https://matplotlib.org/"><img src="https://img.shields.io/badge/matplotlib-v3.7.1-4527a0?style=flat-square"/></a>
     </td>
   </tr>
 </table>
 
 
 ## Repository Structure
+- R was used for the core single-cell workflow (QC through CAR+ mapping and CellChat).
+- Python was only used for downstream modeling of the per-sample CellChat outputs (per-interaction regression, rank aggregation, and EDF7 figures).
 
 ```
 CART-Enterocolitis-Analysis-Scripts/
@@ -47,7 +56,7 @@ CART-Enterocolitis-Analysis-Scripts/
 │   └── sessionInfo.md                          # Full R session information and package versions                     
 ├── Python Scripts/
 │   ├── colitis_analysis_script.ipynb           # End-to-end CellChat downstream analysis notebook
-│   └── clplots/                                # Plotting helpers
+│   └── clplots/                                # Plotting helpers (volcano, circle, RRA/regression boxplots, etc.)
 │   └── clutils/                                # Data preparation, ranking, summarization, and regression utilities
 │   └── package_versions.txt                    # Full Jupyter session information and package versions
 └── README.md
