@@ -44,11 +44,11 @@ CART-Enterocolitis-Analysis-Scripts/
 │   ├── 07_Figs_Stroma.Rmd                      # Figures for stromal subset (bubble plots, stacked bars, condition plots, etc.)
 │   └── 08_CAR_Mapping_and_Figs.Rmd             # Certomics CAR+ cell mapping onto T cell subset, heatmaps, pie plots, etc.
 │   └── 09_CellChat.Rmd                         # Sample-wise CellChat that was aggregated and analyzed further using regression model
+├── sessionInfo.md                              # Full R session information and package versions
 ├── Python Scripts/
 │   ├── colitis_analysis_script.ipynb           # End-to-end CellChat downstream analysis notebook
 │   └── package_versions.txt                    # Python package versions.
 │   └── clplots/                                # Plotting helpers
 │   └── clutils/                                # Data preparation, ranking, summarization, and regression utilities
-├── sessionInfo.md                              # Full R session information and package versions
 └── README.md
 ```
