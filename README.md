@@ -3,6 +3,9 @@ Repository containing code used to analyze single-cell RNA-seq data published in
 <br>Data available under GEO accession number [GSE322796](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE322796)</br>
 
 ## Software & Packages
+- R was used for the core single-cell workflow (QC through CAR+ mapping and CellChat).
+- Python was only used for downstream modeling of the per-sample CellChat outputs (per-interaction regression, rank aggregation, and EDF7 figures).
+
 <table>
   <tr>
     <td valign="top">
@@ -38,8 +41,6 @@ Repository containing code used to analyze single-cell RNA-seq data published in
 
 
 ## Repository Structure
-- R was used for the core single-cell workflow (QC through CAR+ mapping and CellChat).
-- Python was only used for downstream modeling of the per-sample CellChat outputs (per-interaction regression, rank aggregation, and EDF7 figures).
 
 ```
 CART-Enterocolitis-Analysis-Scripts/
