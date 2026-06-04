@@ -56,7 +56,7 @@ stromal_subset <- RunUMAP(stromal_subset,    reduction = "harmony", dims = 1:30)
 stromal_subset <- FindNeighbors(stromal_subset, reduction = "harmony", dims = 1:30)
 stromal_subset <- FindClusters(stromal_subset, resolution = 0.4)
 
-saveRDS(stromal_subset, "RDS/stromal_subset_umap_14_clusters.RDS")
+saveRDS(stromal_subset, "RDS/stromal_subset_umap_13_clusters.RDS")
 ```
 
 ---
@@ -64,7 +64,7 @@ saveRDS(stromal_subset, "RDS/stromal_subset_umap_14_clusters.RDS")
 ## Subcluster Markers
 
 ```{r find_markers, message=FALSE, warning=FALSE}
-stromal_subset <- readRDS("RDS/stromal_subset_umap_14_clusters.RDS")
+stromal_subset <- readRDS("RDS/stromal_subset_umap_13_clusters.RDS")
 DefaultAssay(stromal_subset) <- "RNA"
 Idents(stromal_subset)       <- "seurat_clusters"
 stromal_subset <- JoinLayers(stromal_subset)
@@ -105,14 +105,13 @@ DimPlot(stromal_subset, reduction = "umap", label = TRUE, repel = TRUE, raster =
 Idents(stromal_subset) <- "seurat_clusters"
 
 cluster_annotations <- c(
-  "0" = "Inflam. fibroblasts",            "7"  = "Inflam. fibroblasts",
-  "1" = "SOX6+ teleocytes",               "8"  = "Fibroblasts",
-  "2" = "Myofibroblasts",                 "9"  = "Pericytes",
-  "3" = "SOX6+ teleocytes",               "10" = "FDC/stromal reticular cells",
-  "4" = "Pericytes",                      "11" = "Activated fibroblasts",
-  "5" = "Crypt associated fibroblasts",   "12" = "Myofibroblasts",
-  "6" = "Tissue fibroblasts",             "13" = "Proliferating"
-)
+                        "0" = "Immunomodulatory intestinal fibroblasts", "1" = "Peri-cryptal SOX6+ teleocytes",
+                        "2" = "Myofibroblasts", "3" = "Peri-cryptal SOX6+ teleocytes", 
+                        "4" = "Pericytes", "5" = "Trophocytes",
+                        "6" = "Tissue mesenchymal", "7" = "Inflam. fibroblasts-like",
+                        "8" = "Pericytes-like", "9" = "FDC/stromal reticular cells",
+                        "10" = "Activated fibroblasts", "11" = "Myofibroblasts-like",
+                        "12" = "Proliferating stromal cells")
 
 stromal_subset$cluster_label <- plyr::mapvalues(
   stromal_subset$seurat_clusters,
@@ -124,5 +123,5 @@ Idents(stromal_subset) <- stromal_subset$cluster_label
 DimPlot(stromal_subset, reduction = "umap", label = TRUE, repel = TRUE, raster = FALSE) +
   ggtitle("Stromal Subset Annotated")
 
-saveRDS(stromal_subset, "RDS/stromal_subset_umap_14_clusters.RDS")
+saveRDS(stromal_subset, "RDS/stromal_subset_umap_13_clusters.RDS")
 ```
