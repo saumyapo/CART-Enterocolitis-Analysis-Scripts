@@ -47,8 +47,8 @@ CART-Enterocolitis-Analysis-Scripts/
 │   └── sessionInfo.md                          # Full R session information and package versions                     
 ├── Python Scripts/
 │   ├── colitis_analysis_script.ipynb           # End-to-end CellChat downstream analysis notebook
-│   └── package_versions.txt                    # Python package versions.
 │   └── clplots/                                # Plotting helpers
 │   └── clutils/                                # Data preparation, ranking, summarization, and regression utilities
+│   └── package_versions.txt                    # Full Jupyter session information and package versions
 └── README.md
 ```
