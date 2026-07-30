@@ -4,7 +4,7 @@ Repository containing code used to analyze single-cell RNA-seq data published in
 
 ## Software & Packages
 - R was used for the core single-cell workflow (QC through CAR+ mapping and CellChat).
-- Python was only used for downstream modeling of the per-sample CellChat outputs (per-interaction regression, rank aggregation, and EDF7 figures).
+- Python was only used for downstream modeling of the per-sample CellChat outputs (per-interaction regression, rank aggregation, and EDF7 and EDF8 figures).
 
 <table>
   <tr>
