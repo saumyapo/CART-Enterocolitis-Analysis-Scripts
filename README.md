@@ -1,6 +1,7 @@
 # CAR-T Associated Enterocolitis Analysis Scripts
-Repository containing code used to analyze single-cell RNA-seq data published in
-<br>Data available under GEO accession number [GSE322796](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE322796)</br>
+Repository containing code used to analyze single-cell RNA-seq data published in<br>
+Raw single-cell data available under GEO accession number [GSE322796](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE322796)<br>
+Per-sample CellChat data (prior to modeling) is available on FigShare: [LR Interaction Tables](https://doi.org/10.6084/m9.figshare.32600346)
 
 ## Software & Packages
 - R was used for the core single-cell workflow (QC through CAR+ mapping and CellChat).
