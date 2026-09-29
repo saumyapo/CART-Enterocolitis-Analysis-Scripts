@@ -1,7 +1,8 @@
-# CAR-T Associated Enterocolitis Analysis Scripts
-Repository containing code used to analyze single-cell RNA-seq data published in<br>
-Raw single-cell data available under GEO accession number [GSE322796](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE322796)<br>
-Per-sample CellChat data (prior to modeling) is available on FigShare: [LR Interaction Tables](https://doi.org/10.6084/m9.figshare.32600346)
+# Persistence of mucosal CAR-T cells and inflammatory remodeling in enterocolitis associated with BCMA CAR-T cell therapy
+
+* Repository contains code used to analyze single-cell RNA-seq data published in [Nature Medicine](https://www.nature.com/articles/s41591-026-04632-y). Alternatively, PMID for publication is: PMID 42778764; [PubMed URL.](https://pubmed.ncbi.nlm.nih.gov/42778764/)<br>
+* Raw single-cell data available under GEO accession number [GSE322796.](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE322796)<br>
+* Per-sample CellChat data (prior to modeling) is available on FigShare: [LR Interaction Tables.](https://doi.org/10.6084/m9.figshare.32600346)
 
 ## Software & Packages
 - R was used for the core single-cell workflow (QC through CAR+ mapping and CellChat).
